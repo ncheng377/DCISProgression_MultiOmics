@@ -1,0 +1,672 @@
+---
+title: 'DCIS R01: Phosphoproteomics - Meta-Analysis of DCIS vs IDC & DCIS High vs DCIS Low'
+author: "Brooke L. Fridley, PhD & Chase J. Sakitis, PhD"
+date: "`r Sys.Date()`"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = FALSE, warning=FALSE, message = FALSE)
+
+library(tidyverse)
+library(ggplot2)
+library(DescTools)
+library(ggpubr) 
+library(stats)
+library(GGally)
+library(missForest)
+library(openxlsx)
+library(psych)
+library(ComplexHeatmap)
+library(circlize)
+library(multtest)
+library(readxl)
+library(metafor)
+library(knitr)
+
+```
+
+## Meta-Analysis of Primary Results
+
+In this analysis, I am doing the meta-analysis of the results from the prior experiment ('Batch 1' or 'B1') with the results from the new experiment ('Batch 2' or 'B2').  
+
+The annotations for the gene names are (Accession).(Gene Symbol).(Annotated Sequence).(Modifications). An example is "O95218.ZRANB2.[K].EVEDKESEGEEEDEDEDLSK.[Y].1xPhospho [S7]".  
+
+The purpose of this study is to compare IDC to DCIS and DCIS High vs DCIS Low for each gene that appears in both protein batches based on annotation (mentioned above) matching.  
+
+A summary of the various genes can be found in the excel file "Phosphoprotein_Meta_analysis_CS.xlsx". In this Excel file, there are separate tabs for analysis of Phosphoprotein DCIS (combined) and IDC Batch 1 and 2 and Phosphoprotein DCIS High and DCIS Low Batch 1 and 2. There are also tabs for meta analysis between the 2 batches for both DCIS vs IDC and DCIS High vs DCIS Low. The DCIS.CCR2high and DCIS.CCR2low groups are combined to a DCIS group for the DCIS vs IDC analysis, increasing the n from 3 to 6 for the DCIS group.  
+
+For matching the gene names between the two batches, the results are:  
+
+Matching Gene Count between the 2 batches = 647  
+Unique to Batch 1 = 656 (1303 total)  
+Unique to Batch 2 = 4476 (5123 total)  
+
+
+```{r readdata1, echo=FALSE}
+
+load(file ="W:/Health Services and Outcomes Research/BEC/Brooke Fridley/consult/Cheng.Nikki/R01 DCIS/data/processed_data/Phosphoprotein_processed_data.RData")
+
+data.trans.pprotein.B1<-PProteinData$pdata
+miss.percent.pprotein.B1<-PProteinData$Missing.Percentage
+annonation.pprotein.B1<-PProteinData$annotation
+n.pprotein.B1<-dim(annonation.pprotein.B1)[1]
+
+new.ann.B1 <- paste0(annonation.pprotein.B1$`Master Protein Accessions`,".",annonation.pprotein.B1$`Gene Symbol`,".",
+                  annonation.pprotein.B1$`Annotated Sequence`,".",annonation.pprotein.B1$Modifications)
+for(j in 1:dim(annonation.pprotein.B1)[1]){
+  if(is.na(annonation.pprotein.B1$Modifications[j])){
+    new.ann.B1[j] <- substr(new.ann.B1[j], 1, nchar(new.ann.B1[j]) - 3)
+  }
+}
+colnames(data.trans.pprotein.B1)[2:(n.pprotein.B1+1)] <- new.ann.B1
+
+load(file ="W:/Health Services and Outcomes Research/BEC/Brooke Fridley/consult/Cheng.Nikki/R01 DCIS/data/processed_data/Phosphoprotein_processed_new_data.RData")
+
+data.trans.pprotein.B2<-ProteinData$ProteinData
+miss.percent.pprotein.B2<-ProteinData$Missing.Percentage
+annonation.pprotein.B2<-ProteinData$Annotation
+n.pprotein.B2<-dim(annonation.pprotein.B2)[1]
+
+new.ann.B2 <- paste0(annonation.pprotein.B2$`Master Protein Accessions`,".",annonation.pprotein.B2$`Gene Symbol`,".",
+                     annonation.pprotein.B2$`Annotated Sequence`,".",annonation.pprotein.B2$Modifications)
+for(j in 1:dim(annonation.pprotein.B2)[1]){
+  if(is.na(annonation.pprotein.B2$Modifications[j])){
+    new.ann.B2[j] <- substr(new.ann.B2[j], 1, nchar(new.ann.B2[j]) - 3)
+  }
+}
+colnames(data.trans.pprotein.B2)[1:n.pprotein.B2] <- new.ann.B2
+
+ 
+remove(PProteinData,ProteinData,annonation.pprotein.B1,annonation.pprotein.B2,new.ann.B1,new.ann.B2,j)
+
+```
+
+
+
+```{r missing1, fig.width=8, fig.height=8}
+
+#plotting missing percentages
+
+hist(miss.percent.pprotein.B1[,1],main = "Phosphoproteomic Data (Batch 1)", xlab = "Percent Missing")
+hist(miss.percent.pprotein.B2[,1],main = "Phosphoproteomic Data (Batch 2)", xlab = "Percent Missing")
+
+# include_graphics("W:/Health Services and Outcomes Research/BEC/Brooke Fridley/consult/Cheng/R01 DCIS/results/Chase_Results/Protein_PercentMissing_CS.png")
+
+```
+
+
+```{r summary1, echo=FALSE}
+
+data.trans.pprotein.DvI.B1 <- data.trans.pprotein.B1 |> filter(group != "Normal" & group != "Normal.Adj")
+data.trans.pprotein.DvI.B1$group <- str_replace(data.trans.pprotein.DvI.B1$group,"DCIS.CCR2high","DCIS")
+data.trans.pprotein.DvI.B1$group <- str_replace(data.trans.pprotein.DvI.B1$group,"DCIS.CCR2low","DCIS")
+data.trans.pprotein.DvI.B2 <- data.trans.pprotein.B2
+data.trans.pprotein.DvI.B2$group <- str_replace(data.trans.pprotein.DvI.B2$group,"DCIS.CCR2high","DCIS")
+data.trans.pprotein.DvI.B2$group <- str_replace(data.trans.pprotein.DvI.B2$group,"DCIS.CCR2low","DCIS")
+
+data.trans.pprotein.HvL.B1 <- data.trans.pprotein.B1 |> filter(group != "Normal" & group != "Normal.Adj" & group != "IDC")
+data.trans.pprotein.HvL.B1$group <- as.factor(data.trans.pprotein.HvL.B1$group)
+data.trans.pprotein.HvL.B1$group <- relevel(data.trans.pprotein.HvL.B1$group, ref = "DCIS.CCR2low")
+data.trans.pprotein.HvL.B2 <- data.trans.pprotein.B2 |> filter(group != "IDC")
+data.trans.pprotein.HvL.B2$group <- as.factor(data.trans.pprotein.HvL.B2$group)
+data.trans.pprotein.HvL.B2$group <- relevel(data.trans.pprotein.HvL.B2$group, ref = "DCIS.CCR2low")
+
+
+tmp.pprotein.DvI.B1<-describeBy(data.trans.pprotein.DvI.B1[,2:(n.pprotein.B1+1)], group=data.trans.pprotein.DvI.B1$group)
+tmp.pprotein.DvI.B2<-describeBy(data.trans.pprotein.DvI.B2[,1:(n.pprotein.B2)], group=data.trans.pprotein.DvI.B2$group)
+
+tmp.pprotein.HvL.B1<-describeBy(data.trans.pprotein.HvL.B1[,2:(n.pprotein.B1+1)], group=data.trans.pprotein.HvL.B1$group)
+tmp.pprotein.HvL.B2<-describeBy(data.trans.pprotein.HvL.B2[,1:(n.pprotein.B2)], group=data.trans.pprotein.HvL.B2$group)
+
+tmp1.pprotein.DvI.B1 <- data.frame(Gene=rownames(tmp.pprotein.DvI.B1[[1]]),
+                         DCIS.n=tmp.pprotein.DvI.B1[[1]]$n,DCIS.mean=tmp.pprotein.DvI.B1[[1]]$mean,DCIS.sd=tmp.pprotein.DvI.B1[[1]]$sd,
+                         IDC.n=tmp.pprotein.DvI.B1[[2]]$n,IDC.mean=tmp.pprotein.DvI.B1[[2]]$mean,IDC.sd=tmp.pprotein.DvI.B1[[2]]$sd)
+tmp1.pprotein.DvI.B2 <- data.frame(Gene=rownames(tmp.pprotein.DvI.B2[[1]]),
+                         DCIS.n=tmp.pprotein.DvI.B2[[1]]$n,DCIS.mean=tmp.pprotein.DvI.B2[[1]]$mean,DCIS.sd=tmp.pprotein.DvI.B2[[1]]$sd,
+                         IDC.n=tmp.pprotein.DvI.B2[[2]]$n,IDC.mean=tmp.pprotein.DvI.B2[[2]]$mean,IDC.sd=tmp.pprotein.DvI.B2[[2]]$sd)
+
+tmp1.pprotein.HvL.B1 <- data.frame(Gene=rownames(tmp.pprotein.HvL.B1[[1]]),
+                         DCIS.Low.n=tmp.pprotein.HvL.B1[[1]]$n,DCIS.Low.mean=tmp.pprotein.HvL.B1[[1]]$mean,DCIS.Low.sd=tmp.pprotein.HvL.B1[[1]]$sd,
+                         DCIS.High.n=tmp.pprotein.HvL.B1[[2]]$n,DCIS.High.mean=tmp.pprotein.HvL.B1[[2]]$mean,DCIS.High.sd=tmp.pprotein.HvL.B1[[2]]$sd)
+tmp1.pprotein.HvL.B2 <- data.frame(Gene=rownames(tmp.pprotein.HvL.B2[[1]]),
+                         DCIS.Low.n=tmp.pprotein.HvL.B2[[1]]$n,DCIS.Low.mean=tmp.pprotein.HvL.B2[[1]]$mean,DCIS.Low.sd=tmp.pprotein.HvL.B2[[1]]$sd,
+                         DCIS.High.n=tmp.pprotein.HvL.B2[[2]]$n,DCIS.High.mean=tmp.pprotein.HvL.B2[[2]]$mean,DCIS.High.sd=tmp.pprotein.HvL.B2[[2]]$sd)
+
+
+pprotein.LM.results.DvI.B1<-matrix(NA,nrow=n.pprotein.B1, ncol=4)
+dimnames(pprotein.LM.results.DvI.B1)[[2]]<-c("Gene", "Beta", "SE_Beta","T.Test.P.Value")
+pprotein.LM.results.DvI.B2<-matrix(NA,nrow=n.pprotein.B2, ncol=4)
+dimnames(pprotein.LM.results.DvI.B2)[[2]]<-c("Gene", "Beta", "SE_Beta","T.Test.P.Value")
+
+pprotein.LM.results.HvL.B1<-matrix(NA,nrow=n.pprotein.B1, ncol=4)
+dimnames(pprotein.LM.results.HvL.B1)[[2]]<-c("Gene", "Beta", "SE_Beta","T.Test.P.Value")
+pprotein.LM.results.HvL.B2<-matrix(NA,nrow=n.pprotein.B2, ncol=4)
+dimnames(pprotein.LM.results.HvL.B2)[[2]]<-c("Gene", "Beta", "SE_Beta","T.Test.P.Value")
+
+for(i in 1:n.pprotein.B1){
+  fit1.pprotein.DvI.B1<-lm(data.trans.pprotein.DvI.B1[,i+1]~as.factor(data.trans.pprotein.DvI.B1$group))
+  fit2.pprotein.DvI.B1<-summary(fit1.pprotein.DvI.B1)
+  
+  pprotein.LM.results.DvI.B1[i,1]<-dimnames(data.trans.pprotein.DvI.B1)[[2]][i+1]
+  pprotein.LM.results.DvI.B1[i,2]<-coef(fit1.pprotein.DvI.B1)[2]
+  pprotein.LM.results.DvI.B1[i,3]<-fit2.pprotein.DvI.B1$coefficients[,"Std. Error"][2]
+  pprotein.LM.results.DvI.B1[i,4]<-round(fit2.pprotein.DvI.B1$coefficients[2,'Pr(>|t|)'], 4)
+  
+  fit1.pprotein.HvL.B1<-lm(data.trans.pprotein.HvL.B1[,i+1]~as.factor(data.trans.pprotein.HvL.B1$group))
+  fit2.pprotein.HvL.B1<-summary(fit1.pprotein.HvL.B1)
+  
+  pprotein.LM.results.HvL.B1[i,1]<-dimnames(data.trans.pprotein.HvL.B1)[[2]][i+1]
+  pprotein.LM.results.HvL.B1[i,2]<-coef(fit1.pprotein.HvL.B1)[2]
+  pprotein.LM.results.HvL.B1[i,3]<-fit2.pprotein.HvL.B1$coefficients[,"Std. Error"][2]
+  pprotein.LM.results.HvL.B1[i,4]<-round(fit2.pprotein.HvL.B1$coefficients[2,'Pr(>|t|)'], 4)
+}
+
+for(i in 1:n.pprotein.B2){
+  fit1.pprotein.DvI.B2<-lm(data.trans.pprotein.DvI.B2[,i]~as.factor(data.trans.pprotein.DvI.B2$group))
+  fit2.pprotein.DvI.B2<-summary(fit1.pprotein.DvI.B2)
+  
+  pprotein.LM.results.DvI.B2[i,1]<-dimnames(data.trans.pprotein.DvI.B2)[[2]][i]
+  pprotein.LM.results.DvI.B2[i,2]<-coef(fit1.pprotein.DvI.B2)[2]
+  pprotein.LM.results.DvI.B2[i,3]<-fit2.pprotein.DvI.B2$coefficients[,"Std. Error"][2]
+  pprotein.LM.results.DvI.B2[i,4]<-round(fit2.pprotein.DvI.B2$coefficients[2,'Pr(>|t|)'], 4)
+  
+  fit1.pprotein.HvL.B2<-lm(data.trans.pprotein.HvL.B2[,i]~as.factor(data.trans.pprotein.HvL.B2$group))
+  fit2.pprotein.HvL.B2<-summary(fit1.pprotein.HvL.B2)
+  
+  pprotein.LM.results.HvL.B2[i,1]<-dimnames(data.trans.pprotein.HvL.B2)[[2]][i]
+  pprotein.LM.results.HvL.B2[i,2]<-coef(fit1.pprotein.HvL.B2)[2]
+  pprotein.LM.results.HvL.B2[i,3]<-fit2.pprotein.HvL.B2$coefficients[,"Std. Error"][2]
+  pprotein.LM.results.HvL.B2[i,4]<-round(fit2.pprotein.HvL.B2$coefficients[2,'Pr(>|t|)'], 4)
+}
+
+pprotein.LM.results.DvI.B1 <- as.data.frame(pprotein.LM.results.DvI.B1)
+pprotein.LM.results.DvI.B2 <- as.data.frame(pprotein.LM.results.DvI.B2)
+pprotein.LM.results.HvL.B1 <- as.data.frame(pprotein.LM.results.HvL.B1)
+pprotein.LM.results.HvL.B2 <- as.data.frame(pprotein.LM.results.HvL.B2)
+
+conv_cols <- c("Beta", "SE_Beta","T.Test.P.Value")
+
+pprotein.LM.results.DvI.B1[conv_cols] <- lapply(pprotein.LM.results.DvI.B1[conv_cols], as.numeric)
+pprotein.LM.results.DvI.B2[conv_cols] <- lapply(pprotein.LM.results.DvI.B2[conv_cols], as.numeric)
+pprotein.LM.results.HvL.B1[conv_cols] <- lapply(pprotein.LM.results.HvL.B1[conv_cols], as.numeric)
+pprotein.LM.results.HvL.B2[conv_cols] <- lapply(pprotein.LM.results.HvL.B2[conv_cols], as.numeric)
+
+pprotein.results.DvI.B1 <- inner_join(pprotein.LM.results.DvI.B1,tmp1.pprotein.DvI.B1,by="Gene")
+pprotein.results.DvI.B2 <- inner_join(pprotein.LM.results.DvI.B2,tmp1.pprotein.DvI.B2,by="Gene")
+pprotein.results.HvL.B1 <- inner_join(pprotein.LM.results.HvL.B1,tmp1.pprotein.HvL.B1,by="Gene")
+pprotein.results.HvL.B2 <- inner_join(pprotein.LM.results.HvL.B2,tmp1.pprotein.HvL.B2,by="Gene")
+
+
+remove(tmp.pprotein.DvI.B1,tmp1.pprotein.DvI.B1,fit1.pprotein.DvI.B1,fit2.pprotein.DvI.B1,
+       tmp.pprotein.HvL.B1,tmp1.pprotein.HvL.B1,fit1.pprotein.HvL.B1,fit2.pprotein.HvL.B1,
+       tmp.pprotein.DvI.B2,tmp1.pprotein.DvI.B2,fit1.pprotein.DvI.B2,fit2.pprotein.DvI.B2,
+       tmp.pprotein.HvL.B2,tmp1.pprotein.HvL.B2,fit1.pprotein.HvL.B2,fit2.pprotein.HvL.B2,
+       conv_cols,i)
+
+```
+
+
+## Analysis for top genes in both analyses
+
+DCIS vs. IDC  
+Count for FDR < 0.01 = 2  
+Count for FDR < 0.05 = 8  
+Count for FDR < 0.1 = 13  
+
+DCIS Low vs. DCIS High  
+Count for FDR < 0.01 = 84  
+Count for FDR < 0.05 = 150  
+Count for FDR < 0.1 = 208  
+
+
+
+```{r meta_beta, echo=FALSE}
+
+fdr_thresh_DvI <- 0.1
+
+pprotein.results.gene.combine.DvI.temp <- inner_join(pprotein.results.DvI.B1,pprotein.results.DvI.B2,by="Gene")
+pprotein.results.gene.combine.DvI <- pprotein.results.gene.combine.DvI.temp |>
+  select(Gene,Beta.x,SE_Beta.x,Beta.y,SE_Beta.y)
+n.gene.pprotein.DvI <- dim(pprotein.results.gene.combine.DvI)[1]
+
+pprotein.meta.analysis.list.DvI <- list()
+pprotein.meta.analysis.results.DvI <- matrix(NA,nrow = n.gene.pprotein.DvI,ncol = 6)
+dimnames(pprotein.meta.analysis.results.DvI)[[2]] <- c("Gene","Estimate","SE","Lower.CI","Upper.CI","p.value")
+pprotein.meta.analysis.results.DvI[,1] <- pprotein.results.gene.combine.DvI$Gene
+for(j in 1:n.gene.pprotein.DvI){
+  y <- c(pprotein.results.gene.combine.DvI$Beta.x[j],pprotein.results.gene.combine.DvI$Beta.y[j])
+  se <- c(pprotein.results.gene.combine.DvI$SE_Beta.x[j],pprotein.results.gene.combine.DvI$SE_Beta.y[j])
+  meta.res.pprotein.DvI <- rma(yi = y, sei = se,method = "FE")
+  pprotein.meta.analysis.list.DvI[[j]] <- meta.res.pprotein.DvI
+  pprotein.meta.analysis.results.DvI[j,2] <- meta.res.pprotein.DvI$beta[1]
+  pprotein.meta.analysis.results.DvI[j,3] <- meta.res.pprotein.DvI$se
+  pprotein.meta.analysis.results.DvI[j,4] <- meta.res.pprotein.DvI$ci.lb
+  pprotein.meta.analysis.results.DvI[j,5] <- meta.res.pprotein.DvI$ci.ub
+  pprotein.meta.analysis.results.DvI[j,6] <- meta.res.pprotein.DvI$pval
+}
+pprotein.meta.analysis.results.DvI <- as.data.frame(pprotein.meta.analysis.results.DvI)
+
+fit.pprotein.DvI<-multtest::mt.rawp2adjp(as.numeric(pprotein.meta.analysis.results.DvI$p.value), proc="BH")
+fdr.pprotein.DvI<-fit.pprotein.DvI$adjp[order(fit.pprotein.DvI$index),]
+pprotein.meta.analysis.results.DvI$FDR <- fdr.pprotein.DvI[,2]
+pprotein.meta.analysis.results.DvI$Sig.FDR.0.1 <- pprotein.meta.analysis.results.DvI$FDR < fdr_thresh_DvI
+
+
+fdr_thresh_HvL <- 0.01
+
+pprotein.results.gene.combine.HvL.temp <- inner_join(pprotein.results.HvL.B1,pprotein.results.HvL.B2,by="Gene")
+pprotein.results.gene.combine.HvL <- pprotein.results.gene.combine.HvL.temp |>
+  select(Gene,Beta.x,SE_Beta.x,Beta.y,SE_Beta.y)
+n.gene.pprotein.HvL <- dim(pprotein.results.gene.combine.HvL)[1]
+
+pprotein.meta.analysis.list.HvL <- list()
+pprotein.meta.analysis.results.HvL <- matrix(NA,nrow = n.gene.pprotein.HvL,ncol = 6)
+dimnames(pprotein.meta.analysis.results.HvL)[[2]] <- c("Gene","Estimate","SE","Lower.CI","Upper.CI","p.value")
+pprotein.meta.analysis.results.HvL[,1] <- pprotein.results.gene.combine.HvL$Gene
+for(j in 1:n.gene.pprotein.HvL){
+  y <- c(pprotein.results.gene.combine.HvL$Beta.x[j],pprotein.results.gene.combine.HvL$Beta.y[j])
+  se <- c(pprotein.results.gene.combine.HvL$SE_Beta.x[j],pprotein.results.gene.combine.HvL$SE_Beta.y[j])
+  meta.res.pprotein.HvL <- rma(yi = y, sei = se,method = "FE")
+  pprotein.meta.analysis.list.HvL[[j]] <- meta.res.pprotein.HvL
+  pprotein.meta.analysis.results.HvL[j,2] <- meta.res.pprotein.HvL$beta[1]
+  pprotein.meta.analysis.results.HvL[j,3] <- meta.res.pprotein.HvL$se
+  pprotein.meta.analysis.results.HvL[j,4] <- meta.res.pprotein.HvL$ci.lb
+  pprotein.meta.analysis.results.HvL[j,5] <- meta.res.pprotein.HvL$ci.ub
+  pprotein.meta.analysis.results.HvL[j,6] <- meta.res.pprotein.HvL$pval
+}
+pprotein.meta.analysis.results.HvL <- as.data.frame(pprotein.meta.analysis.results.HvL)
+
+fit.pprotein.HvL<-multtest::mt.rawp2adjp(as.numeric(pprotein.meta.analysis.results.HvL$p.value), proc="BH")
+fdr.pprotein.HvL<-fit.pprotein.HvL$adjp[order(fit.pprotein.HvL$index),]
+pprotein.meta.analysis.results.HvL$FDR <- fdr.pprotein.HvL[,2]
+pprotein.meta.analysis.results.HvL$Sig.FDR.0.01 <- pprotein.meta.analysis.results.HvL$FDR < fdr_thresh_HvL
+
+
+
+tmp2<-list(pprotein.results.DvI.B1, pprotein.results.DvI.B2, pprotein.results.HvL.B1,
+           pprotein.results.HvL.B2, pprotein.meta.analysis.results.DvI, pprotein.meta.analysis.results.HvL)
+
+# names(tmp2)<-c("PProtein.DCISvIDC.Batch.1", "PProtein.DCISvIDC.Batch.2", "PProtein.DCIS.HighvLow.Batch.1", "PProtein.DCIS.HighvLow.Batch.2",
+#                "PProtein.DCISvIDC.Meta", "PProtein.DCIS.HighvLow.Meta")
+# 
+# write.xlsx(tmp2, rowNames=FALSE, "W:/Health Services and Outcomes Research/BEC/Brooke Fridley/consult/Cheng.Nikki/R01 DCIS/results/Chase_Results/Phospohoprotein_Meta_analysis_CS.xlsx")
+
+```
+
+
+
+```{r meta_pvalues, echo=FALSE, fig.width=8, fig.height=8}
+
+pprotein.DvI.meta.pval.temp1 <- inner_join(pprotein.meta.analysis.results.DvI,pprotein.LM.results.DvI.B1,by="Gene")
+pprotein.DvI.meta.pval <- inner_join(pprotein.DvI.meta.pval.temp1,pprotein.LM.results.DvI.B2,by="Gene")
+
+pprotein.HvL.meta.pval.temp1 <- inner_join(pprotein.meta.analysis.results.HvL,pprotein.LM.results.HvL.B1,by="Gene")
+pprotein.HvL.meta.pval <- inner_join(pprotein.HvL.meta.pval.temp1,pprotein.LM.results.HvL.B2,by="Gene")
+
+
+ggplot(pprotein.DvI.meta.pval, aes(T.Test.P.Value.x, T.Test.P.Value.y, fill = Sig.FDR.0.1))+
+  geom_point(shape = 21, size = 2)+
+  xlab("T-test p-values Batch 1")+
+  ylab("T-test p-values Batch 2")+
+  scale_fill_manual(values = c("TRUE" = "green", "FALSE" = "black")) +
+  ggtitle("Meta-Analysis of Phosphoproteomic results", subtitle = "DCIS vs IDC")+
+  geom_vline(xintercept = 0.10 ,col="red")+
+  geom_hline(yintercept= 0.10, col="red")+
+  labs(fill = "FDR < 0.1")
+
+ggplot(pprotein.HvL.meta.pval, aes(T.Test.P.Value.x, T.Test.P.Value.y, fill = Sig.FDR.0.01))+
+  geom_point(shape = 21, size = 2)+
+  xlab("T-test p-values Batch 1")+
+  ylab("T-test p-values Batch 2")+
+  scale_fill_manual(values = c("TRUE" = "green", "FALSE" = "black")) +
+  ggtitle("Meta-Analysis of Phosphoproteomic results", subtitle = "DCIS High vs DCIS Low")+
+  geom_vline(xintercept = 0.10 ,col="red")+
+  geom_hline(yintercept= 0.10, col="red")+
+  labs(fill = "FDR < 0.01")
+
+
+```
+
+
+
+
+## Forest Plots and Boxplots for Phosphoprotein: DCIS vs IDC (top genes)
+
+13 genes from the phosphoprotein DCIS vs IDC meta analysis had FDR values < 0.1 from the fixed effects model. In the Excel file, there is a "True/False" indicator column. 
+
+```{r proteinDvIforestplots, echo=FALSE, fig.width=10}
+
+## Forest Plots and Boxplots
+
+# pprotein.DvI.meta.analysis.results.top <- as.numeric(rownames(pprotein.meta.analysis.results.DvI[pprotein.meta.analysis.results.DvI$FDR < fdr_thresh_DvI,]))
+# n.pprotein.DvI.top <- length(pprotein.DvI.meta.analysis.results.top)
+# 
+# for(t in 1:n.pprotein.DvI.top){
+#   forest(pprotein.meta.analysis.list.DvI[[pprotein.DvI.meta.analysis.results.top[t]]],
+#          slab = c("Batch 1","Batch 2"),
+#          header = paste0("Phosphoprotein DCIS vs IDC"),
+#          shade = TRUE)
+#   mtext(pprotein.meta.analysis.results.DvI$Gene[pprotein.DvI.meta.analysis.results.top[t]], side = 3, line = -4, cex = 0.8, adj = 0)
+#   
+#   gene <- pprotein.meta.analysis.results.DvI[pprotein.DvI.meta.analysis.results.top[t],]$Gene
+#   gene_dat <- c(data.trans.pprotein.DvI.B1[,gene],data.trans.pprotein.DvI.B2[,gene])
+#   gene_group <- c(data.trans.pprotein.DvI.B1$group,data.trans.pprotein.DvI.B2$group)
+#   gene_batch <- rep(c("Batch1","Batch2"),each=dim(data.trans.pprotein.DvI.B1)[1])
+#   df_gene <- data.frame(gene_dat,gene_group,gene_batch)
+#   plot1<-ggplot(data=df_gene, aes(x=interaction(gene_group,gene_batch), df_gene[,1], fill = gene_group))+
+#         geom_boxplot(outlier.shape=NA)+
+#         geom_jitter(color="black")+
+#         xlab("Group & Batch")+
+#         ylab("Normalized-Standardized Abundance")+
+#         scale_fill_discrete(name = "Group") +
+#         ggtitle("Phosphoprotein DCIS vs IDC", subtitle = pprotein.meta.analysis.results.DvI$Gene[pprotein.DvI.meta.analysis.results.top[t]])+
+#         theme(axis.text.x = element_text(angle=45, hjust=1, size=10))
+# 
+#   print(plot1)
+# }
+
+
+```
+
+
+## Forest Plots and Boxplots for Phosphoprotein: DCIS High vs DCIS Low (top genes)
+
+84 genes from the protein DCIS High vs DCIS Low meta analysis had FDR values < 0.01 from the fixed effects model. In the Excel file, there is a "True/False" indicator column.
+
+```{r icmsforestplots, echo=FALSE, fig.width=10}
+
+# pprotein.HvL.meta.analysis.results.top <- as.numeric(rownames(pprotein.meta.analysis.results.HvL[pprotein.meta.analysis.results.HvL$FDR < fdr_thresh_HvL,]))
+# n.pprotein.HvL.top <- length(pprotein.HvL.meta.analysis.results.top)
+# 
+# for(t in 1:n.pprotein.HvL.top){
+#   forest(pprotein.meta.analysis.list.HvL[[pprotein.HvL.meta.analysis.results.top[t]]],
+#          slab = c("Batch 1","Batch 2"),
+#          header = paste0("Phosphoprotein DCIS High vs DCIS Low"),
+#          shade = TRUE)
+#   mtext(pprotein.meta.analysis.results.HvL$Gene[pprotein.HvL.meta.analysis.results.top[t]], side = 3, line = -4, cex = 0.8, adj = 0)
+#   
+#   gene <- pprotein.meta.analysis.results.HvL[pprotein.HvL.meta.analysis.results.top[t],]$Gene
+#   gene_dat <- c(data.trans.pprotein.HvL.B1[,gene],data.trans.pprotein.HvL.B2[,gene])
+#   gene_group <- c(data.trans.pprotein.HvL.B1$group,data.trans.pprotein.HvL.B2$group)
+#   gene_batch <- rep(c("Batch1","Batch2"),each=dim(data.trans.pprotein.HvL.B1)[1])
+#   df_gene <- data.frame(gene_dat,gene_group,gene_batch)
+#   plot1<-ggplot(data=df_gene, aes(x=interaction(gene_group,gene_batch), df_gene[,1], fill = gene_group))+
+#         geom_boxplot(outlier.shape=NA)+
+#         geom_jitter(color="black")+
+#         xlab("Group & Batch")+
+#         ylab("Normalized-Standardized Abundance")+
+#         scale_fill_discrete(name = "Group") +
+#         ggtitle("Phosphoprotein DCIS High vs DCIS Low - ", subtitle = pprotein.meta.analysis.results.HvL$Gene[pprotein.HvL.meta.analysis.results.top[t]])+
+#         theme(axis.text.x = element_text(angle=45, hjust=1, size=10))
+# 
+#   print(plot1)
+# }
+
+
+
+```
+
+
+
+```{r proteinDvIboxplots, echo=FALSE, fig.width=10}
+
+knitr::opts_chunk$set(
+  fig.width  = 6.5,   # inches (choose based on manuscript column width)
+  fig.height = 4.0,   # inches
+  dpi = 300,
+  fig.retina = 1      # important: prevents “retina scaling” side-effects
+)
+
+pprotein.DvI.meta.analysis.results.top <- as.numeric(rownames(pprotein.meta.analysis.results.DvI[pprotein.meta.analysis.results.DvI$FDR < fdr_thresh_DvI,]))
+
+pprotein.DvI.meta.analysis.results.top <- 
+  c(which(pprotein.meta.analysis.results.DvI$Gene == "P02765.AHSG.[K].FSVVYAK.[C]"),
+    which(pprotein.meta.analysis.results.DvI$Gene == "H7C2N1.PTMA.[K].RAAEDDEDDDVDTKK.[Q]"),
+    which(pprotein.meta.analysis.results.DvI$Gene == "Q15061.WDR43.[R].LQAKESPQR.[K].1xPhospho [S6]"))
+
+
+n.pprotein.DvI.top <- length(pprotein.DvI.meta.analysis.results.top)
+
+pprotein.DvI.top.results <- pprotein.meta.analysis.results.DvI[pprotein.DvI.meta.analysis.results.top,]
+pprotein.DvI.top.results$p.value <- as.numeric(pprotein.DvI.top.results$p.value)
+pprotein.DvI.top.results <- pprotein.DvI.top.results |>
+  mutate(Gene_short = c("AHSG","PTMA","WDR43"))
+
+
+# for(t in 1:n.pprotein.DvI.top){
+#   gene <-pprotein.DvI.top.results$Gene[t]
+#   gene_dat <- c(data.trans.pprotein.DvI.B1[,gene],data.trans.pprotein.DvI.B2[,gene])
+#   gene_group <- c(data.trans.pprotein.DvI.B1$group,data.trans.pprotein.DvI.B2$group)
+#   gene_batch <- rep(c("Batch1","Batch2"),each=dim(data.trans.pprotein.DvI.B1)[1])
+#   df_gene <- data.frame(gene_dat,gene_group,gene_batch)
+#   p.value = pprotein.DvI.top.results$p.value[t]
+#   p_lab <- if (is.na(p.value)) "p = NA" else paste0("p = ", signif(p.value, 3))
+#   plot1<-ggplot(data=df_gene, aes(x=interaction(gene_group,gene_batch), df_gene[,1], fill = gene_group))+
+#         geom_boxplot(outlier.shape=NA)+
+#         geom_jitter(color="black")+
+#         xlab("Group & Batch")+
+#         ylab("Normalized-Standardized Abundance")+
+#         coord_cartesian(ylim = c(-1.5, 2.0)) +
+#         annotate("text", x = Inf, y = Inf, label = p_lab, hjust = 1.1, vjust = 15, size=5) +
+#         scale_fill_discrete(name = "Group") +
+#         ggtitle("Phosphoprotein DCIS vs IDC", subtitle =
+#                   pprotein.DvI.top.results$Gene[t])+
+#         theme(axis.text.x = element_text(angle=45, hjust=1, size=10))
+# 
+#   print(plot1)
+# }
+
+for(t in 1:n.pprotein.DvI.top){
+  gene <-pprotein.DvI.top.results$Gene[t]
+  gene_dat <- c(data.trans.pprotein.DvI.B1[,gene],data.trans.pprotein.DvI.B2[,gene])
+  gene_group <- c(data.trans.pprotein.DvI.B1$group,data.trans.pprotein.DvI.B2$group)
+  gene_batch <- rep(c("Batch1","Batch2"),each=dim(data.trans.pprotein.DvI.B1)[1])
+  df_gene <- data.frame(gene_dat,gene_group,gene_batch)
+  p.value = pprotein.DvI.top.results$p.value[t]
+  p_lab <- if (is.na(p.value)) "p = NA" else paste0("p = ", signif(p.value, 3))
+  plot1<-ggplot(data=df_gene, aes(x=interaction(gene_group,gene_batch), df_gene[,1], fill = gene_group))+
+        geom_boxplot(outlier.shape=NA)+
+        geom_jitter(color="black")+
+        xlab("Group & Batch")+
+        ylab("Normalized-Standardized Abundance")+
+        coord_cartesian(ylim = c(-1.5, 2.0)) +
+        annotate("text", x = Inf, y = Inf, label = p_lab, hjust = 1.1, vjust = 15, size=5) +
+        scale_fill_discrete(name = "Group") +
+        ggtitle("Phosphoprotein DCIS vs IDC", subtitle =
+                  pprotein.DvI.top.results$Gene_short[t])+
+        theme(axis.text.x = element_text(angle=45, hjust=1, size=10))
+
+  print(plot1)
+}
+
+
+```
+
+```{r proteinDvIboxplots2, echo=FALSE, fig.width=10}
+
+knitr::opts_chunk$set(
+  fig.width  = 6.5,   # inches (choose based on manuscript column width)
+  fig.height = 4.0,   # inches
+  dpi = 300,
+  fig.retina = 1      # important: prevents “retina scaling” side-effects
+)
+
+
+fmt_p <- function(p, prefix = "p = ") {
+  if (is.na(p)) return(paste0(prefix, "NA"))
+  paste0(prefix, sprintf("%.3f", as.numeric(p)))
+}
+
+
+pprotein.B1.meta <- read_excel("W:/Health Services and Outcomes Research/BCB/members/Sakitis.Chase/Consult/Cheng.Nikki/Chase_Results/Phospohoprotein_Meta_analysis_CS.xlsx",
+                            sheet = "PProtein.DCISvIDC.Batch.1")
+pprotein.B2.meta <- read_excel("W:/Health Services and Outcomes Research/BCB/members/Sakitis.Chase/Consult/Cheng.Nikki/Chase_Results/Phospohoprotein_Meta_analysis_CS.xlsx",
+                            sheet = "PProtein.DCISvIDC.Batch.2")
+
+p_vec_B1 <- setNames(pprotein.B1.meta$T.Test.P.Value, pprotein.B1.meta$Gene)
+p_vec_B2 <- setNames(pprotein.B2.meta$T.Test.P.Value, pprotein.B2.meta$Gene)
+
+pprotein.DvI.meta.analysis.results.top <- as.numeric(rownames(pprotein.meta.analysis.results.DvI[pprotein.meta.analysis.results.DvI$FDR < fdr_thresh_DvI,]))
+
+pprotein.DvI.meta.analysis.results.top <-
+  c(which(pprotein.meta.analysis.results.DvI$Gene == "P02765.AHSG.[K].FSVVYAK.[C]"),
+    which(pprotein.meta.analysis.results.DvI$Gene == "H7C2N1.PTMA.[K].RAAEDDEDDDVDTKK.[Q]"),
+    which(pprotein.meta.analysis.results.DvI$Gene == "Q15061.WDR43.[R].LQAKESPQR.[K].1xPhospho [S6]"))
+
+
+n.pprotein.DvI.top <- length(pprotein.DvI.meta.analysis.results.top)
+
+pprotein.DvI.top.results <- pprotein.meta.analysis.results.DvI[pprotein.DvI.meta.analysis.results.top,]
+pprotein.DvI.top.results$p.value <- as.numeric(pprotein.DvI.top.results$p.value)
+pprotein.DvI.top.results <- pprotein.DvI.top.results |>
+  mutate(Gene_short = c("AHSG","PTMA","WDR43"))
+
+
+# for(t in 1:n.pprotein.DvI.top){
+#   gene <-pprotein.DvI.top.results$Gene[t]
+#   gene_dat <- c(data.trans.pprotein.DvI.B1[,gene],data.trans.pprotein.DvI.B2[,gene])
+#   gene_group <- c(data.trans.pprotein.DvI.B1$group,data.trans.pprotein.DvI.B2$group)
+#   gene_batch <- rep(c("Batch1","Batch2"),each=dim(data.trans.pprotein.DvI.B1)[1])
+#   df_gene <- data.frame(gene_dat,gene_group,gene_batch)
+#   p.value1 <- unname(as.numeric(p_vec_B1[gene]))
+#   p_lab1   <- fmt_p(p.value1, "B1: p = ")
+#   p.value2 <- unname(as.numeric(p_vec_B2[gene]))
+#   p_lab2   <- fmt_p(p.value2, "B2: p = ")
+#   plot1<-ggplot(data=df_gene, aes(x=interaction(gene_group,gene_batch), df_gene[,1], fill = gene_group))+
+#         geom_boxplot(outlier.shape=NA)+
+#         geom_jitter(color="black")+
+#         xlab("Group & Batch")+
+#         ylab("Normalized-Standardized Abundance")+
+#         coord_cartesian(ylim = c(-1.5, 2.0)) +
+#         annotate("text", x = Inf, y = Inf, label = p_lab1, hjust = 5, vjust = 16.5, size=5) +
+#         annotate("text", x = Inf, y = Inf, label = p_lab2, hjust = 1.1, vjust = 16.5, size=5) +
+#         scale_fill_discrete(name = "Group") +
+#         ggtitle("Phosphoprotein DCIS vs IDC", subtitle =
+#                   pprotein.DvI.top.results$Gene[t])+
+#         theme(axis.text.x = element_text(angle=45, hjust=1, size=10))
+# 
+#   print(plot1)
+# }
+
+for(t in 1:n.pprotein.DvI.top){
+  gene <-pprotein.DvI.top.results$Gene[t]
+  gene_dat <- c(data.trans.pprotein.DvI.B1[,gene],data.trans.pprotein.DvI.B2[,gene])
+  gene_group <- c(data.trans.pprotein.DvI.B1$group,data.trans.pprotein.DvI.B2$group)
+  gene_batch <- rep(c("Batch1","Batch2"),each=dim(data.trans.pprotein.DvI.B1)[1])
+  df_gene <- data.frame(gene_dat,gene_group,gene_batch)
+  p.value1 <- unname(as.numeric(p_vec_B1[gene]))
+  p_lab1   <- fmt_p(p.value1, "B1: p = ")
+  p.value2 <- unname(as.numeric(p_vec_B2[gene]))
+  p_lab2   <- fmt_p(p.value2, "B2: p = ")
+  plot1<-ggplot(data=df_gene, aes(x=interaction(gene_group,gene_batch), df_gene[,1], fill = gene_group))+
+        geom_boxplot(outlier.shape=NA)+
+        geom_jitter(color="black")+
+        xlab("Group & Batch")+
+        ylab("Normalized-Standardized Abundance")+
+        coord_cartesian(ylim = c(-1.5, 2.0)) +
+        annotate("text", x = Inf, y = Inf, label = p_lab1, hjust = 5, vjust = 16.5, size=5) +
+        annotate("text", x = Inf, y = Inf, label = p_lab2, hjust = 1.1, vjust = 16.5, size=5) +
+        scale_fill_discrete(name = "Group") +
+        ggtitle("Phosphoprotein DCIS vs IDC", subtitle =
+                  pprotein.DvI.top.results$Gene_short[t])+
+        theme(axis.text.x = element_text(angle=45, hjust=1, size=10))
+
+  print(plot1)
+}
+
+
+```
+
+
+```{r proteinDvIboxplots3, echo=FALSE, fig.width=10}
+
+knitr::opts_chunk$set(
+  fig.width  = 6.5,   # inches (choose based on manuscript column width)
+  fig.height = 4.0,   # inches
+  dpi = 300,
+  fig.retina = 1      # important: prevents “retina scaling” side-effects
+)
+# hjust_values <- c(8,7,7)
+
+fmt_p2 <- function(p, prefix = "p = ") {
+  if (is.na(p)) return(paste0(prefix, "NA"))
+  paste0(prefix, sprintf("%.5f", as.numeric(p)))
+}
+
+# for(t in 1:n.pprotein.DvI.top){
+#   gene <-pprotein.DvI.top.results$Gene[t]
+#   gene_dat <- c(data.trans.pprotein.DvI.B1[,gene],data.trans.pprotein.DvI.B2[,gene])
+#   gene_group <- c(data.trans.pprotein.DvI.B1$group,data.trans.pprotein.DvI.B2$group)
+#   gene_batch <- rep(c("Batch1","Batch2"),each=dim(data.trans.pprotein.DvI.B1)[1])
+#   df_gene <- data.frame(gene_dat,gene_group,gene_batch)
+#   p.value = pprotein.DvI.top.results$p.value[t]
+#   p_lab <- if (is.na(p.value)) "p = NA" else paste0("p = ", signif(p.value, 3))
+#   
+#   p.value1 <- unname(as.numeric(p_vec_B1[gene]))
+#   p_lab1   <- fmt_p(p.value1, "B1: p = ")
+#   p.value2 <- unname(as.numeric(p_vec_B2[gene]))
+#   p_lab2   <- fmt_p(p.value2, "B2: p = ")
+# 
+#   plot1<-ggplot(data=df_gene, aes(x=interaction(gene_group,gene_batch), df_gene[,1], fill = gene_group))+
+#         geom_boxplot(outlier.shape=NA)+
+#         geom_jitter(color="black")+
+#         xlab("Group & Batch")+
+#         ylab("Normalized-Standardized Abundance")+
+#         coord_cartesian(ylim = c(-1.5, 2.0)) +
+#         annotate("text", x = Inf, y = Inf, label = p_lab, hjust = hjust_values[t], vjust = 1.5, size=5) +
+#         annotate("text", x = Inf, y = Inf, label = p_lab1, hjust = 5, vjust = 16.5, size=5) +
+#         annotate("text", x = Inf, y = Inf, label = p_lab2, hjust = 1.1, vjust = 16.5, size=5) +
+#         scale_fill_discrete(name = "Group") +
+#         ggtitle("Phosphoprotein DCIS vs IDC", subtitle =
+#                   pprotein.DvI.top.results$Gene[t])+
+#         theme(axis.text.x = element_text(angle=45, hjust=1, size=10))
+# 
+#   print(plot1)
+# }
+
+for(t in 1:n.pprotein.DvI.top){
+  gene <-pprotein.DvI.top.results$Gene[t]
+  gene_dat <- c(data.trans.pprotein.DvI.B1[,gene],data.trans.pprotein.DvI.B2[,gene])
+  gene_group <- c(data.trans.pprotein.DvI.B1$group,data.trans.pprotein.DvI.B2$group)
+  gene_batch <- rep(c("Batch1","Batch2"),each=dim(data.trans.pprotein.DvI.B1)[1])
+  df_gene <- data.frame(gene_dat,gene_group,gene_batch)
+  p.value = pprotein.DvI.top.results$p.value[t]
+  p_lab   <- fmt_p2(p.value, "p = ")
+  p.value1 <- unname(as.numeric(p_vec_B1[gene]))
+  p_lab1   <- fmt_p(p.value1, "B1: p = ")
+  p.value2 <- unname(as.numeric(p_vec_B2[gene]))
+  p_lab2   <- fmt_p(p.value2, "B2: p = ")
+  plot1<-ggplot(data=df_gene, aes(x=interaction(gene_group,gene_batch), df_gene[,1], fill = gene_group))+
+        geom_boxplot(outlier.shape=NA)+
+        geom_jitter(color="black")+
+        xlab("Group & Batch")+
+        ylab("Normalized-Standardized Abundance") +
+        coord_cartesian(ylim = c(-1.5, 2.0)) +
+        annotate("text", x = Inf, y = Inf, label = p_lab, hjust = 8.1, vjust = 1.25, size=5) +
+        annotate("text", x = Inf, y = Inf, label = p_lab1, hjust = 5, vjust = 16.5, size=5) +
+        annotate("text", x = Inf, y = Inf, label = p_lab2, hjust = 1.1, vjust = 16.5, size=5) +
+        scale_fill_discrete(name = "Group") +
+        ggtitle("Phosphoprotein DCIS vs IDC", subtitle =
+                  pprotein.DvI.top.results$Gene_short[t])+
+        theme(axis.text.x = element_text(angle=45, hjust=1, size=10))
+
+  print(plot1)
+}
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+

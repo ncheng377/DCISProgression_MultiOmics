@@ -1,0 +1,523 @@
+---
+title: 'Summary Data'
+author: "Brooke L. Fridley, PhD & Chase J. Sakitis, PhD"
+date: "`r Sys.Date()`"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = FALSE, warning=FALSE, message = FALSE)
+
+library(tidyverse)
+library(ggplot2)
+library(readxl)
+library(dplyr)
+library(gtsummary)
+library(psych)
+
+```
+
+
+
+```{r readdata1, echo=FALSE}
+
+##### METABOLITES #####
+
+load(file ="W:/Health Services and Outcomes Research/BEC/Brooke Fridley/consult/Cheng.Nikki/R01 DCIS/data/processed_data/HILIC_processed_data.Rdata")
+HILICdata.B1 <- HILICdata
+load(file ="W:/Health Services and Outcomes Research/BEC/Brooke Fridley/consult/Cheng.Nikki/R01 DCIS/data/processed_data/HILIC_processed_new_data.Rdata")
+HILICdata.B2 <- HILICdata
+load(file ="W:/Health Services and Outcomes Research/BEC/Brooke Fridley/consult/Cheng.Nikki/R01 DCIS/data/processed_data/ICMS_processed_data.Rdata")
+ICMSdata.B1 <- ICMSdata
+load(file ="W:/Health Services and Outcomes Research/BEC/Brooke Fridley/consult/Cheng.Nikki/R01 DCIS/data/processed_data/ICMS_processed_new_data.Rdata")
+ICMSdata.B2 <- ICMSdata
+remove(HILICdata,ICMSdata)
+
+data.trans.hilic.B1<-HILICdata.B1
+data.trans.hilic.B2<-HILICdata.B2
+data.trans.icms.B1<-ICMSdata.B1
+data.trans.icms.B2<-ICMSdata.B2
+
+n.metabolites.hilic.B1<-ncol(data.trans.hilic.B1)-3
+n.metabolites.hilic.B2<-ncol(data.trans.hilic.B2)-2
+n.metabolites.icms.B1<-ncol(data.trans.icms.B1)-2
+n.metabolites.icms.B2<-ncol(data.trans.icms.B2)-2
+
+remove(HILICdata.B1,HILICdata.B2,ICMSdata.B1,ICMSdata.B2)
+
+data.trans.hilic.B1 <- data.trans.hilic.B1 |> filter(Group != "Normal")
+data.trans.hilic.B1$Group <- str_replace(data.trans.hilic.B1$Group,"DCIS.CCR2high","DCIS")
+data.trans.hilic.B1$Group <- str_replace(data.trans.hilic.B1$Group,"DCIS.CCR2low","DCIS")
+data.trans.hilic.B2 <- data.trans.hilic.B2 |> filter(Group != "Normal")
+data.trans.hilic.B2$Group <- str_replace(data.trans.hilic.B2$Group,"DCIS.CCR2high","DCIS")
+data.trans.hilic.B2$Group <- str_replace(data.trans.hilic.B2$Group,"DCIS.CCR2low","DCIS")
+
+data.trans.icms.B1 <- data.trans.icms.B1 |> filter(Group != "Normal")
+data.trans.icms.B1$Group <- str_replace(data.trans.icms.B1$Group,"DCIS.CCR2high","DCIS")
+data.trans.icms.B1$Group <- str_replace(data.trans.icms.B1$Group,"DCIS.CCR2low","DCIS")
+data.trans.icms.B2 <- data.trans.icms.B2 |> filter(Group != "Normal")
+data.trans.icms.B2$Group <- str_replace(data.trans.icms.B2$Group,"DCIS.CCR2high","DCIS")
+data.trans.icms.B2$Group <- str_replace(data.trans.icms.B2$Group,"DCIS.CCR2low","DCIS")
+
+hilic.names.nikki.B1<-read_excel("W:/Health Services and Outcomes Research/BEC/Brooke Fridley/consult/Cheng.Nikki/R01 DCIS/data/metabolomics/new_samples/old_HILIC_data_names_metaboanalyst.xlsx")
+hilic.names.nikki.B2<-read_excel("W:/Health Services and Outcomes Research/BEC/Brooke Fridley/consult/Cheng.Nikki/R01 DCIS/data/metabolomics/new_samples/new_HILIC_data_names_metaboanalyst.xlsx")
+icms.names.nikki.B1<-read_excel("W:/Health Services and Outcomes Research/BEC/Brooke Fridley/consult/Cheng.Nikki/R01 DCIS/data/metabolomics/new_samples/old_ICMS_data_names_metaboanalyst.xlsx")
+icms.names.nikki.B2<-read_excel("W:/Health Services and Outcomes Research/BEC/Brooke Fridley/consult/Cheng.Nikki/R01 DCIS/data/metabolomics/new_samples/new_ICMS_data_names_metaboanalyst.xlsx")
+
+hilic.hmdb.B1 <- hilic.names.nikki.B1 |> filter(HMDB != "NA" & HMDB != "-") |> select(Metabolite=Query,HMDB)
+hilic.hmdb.B1 <- hilic.hmdb.B1[order(hilic.hmdb.B1$HMDB),]
+
+hilic.hmdb.B2 <- hilic.names.nikki.B2 |> filter(HMDB != "NA" & HMDB != "-") |> select(Metabolite=Query,HMDB)
+hilic.hmdb.B2 <- hilic.hmdb.B2[order(hilic.hmdb.B2$HMDB),]
+
+icms.hmdb.B1 <- icms.names.nikki.B1 |> filter(HMDB != "NA" & HMDB != "-") |> select(Metabolite=Query,HMDB)
+icms.hmdb.B1 <- icms.hmdb.B1[order(icms.hmdb.B1$HMDB),]
+
+icms.hmdb.B2 <- icms.names.nikki.B2 |> filter(HMDB != "NA" & HMDB != "-") |> select(Metabolite=Query,HMDB)
+icms.hmdb.B2 <- icms.hmdb.B2[order(icms.hmdb.B2$HMDB),]
+
+hilic.hmdb.combine.IDC.temp <- inner_join(hilic.hmdb.B1,hilic.hmdb.B2,by="HMDB")
+hilic.hmdb.combine.IDC <- hilic.hmdb.combine.IDC.temp |>
+  select(HMDB,Metabolite.B1=Metabolite.x,Metabolite.B2=Metabolite.y)
+n.hdmb.hilic <- dim(hilic.hmdb.combine.IDC)[1]
+
+icms.hmdb.combine.IDC.temp <- inner_join(icms.hmdb.B1,icms.hmdb.B2,by="HMDB")
+icms.hmdb.combine.IDC <- icms.hmdb.combine.IDC.temp |>
+  select(HMDB,Metabolite.B1=Metabolite.x,Metabolite.B2=Metabolite.y)
+n.hdmb.icms <- dim(icms.hmdb.combine.IDC)[1]
+
+data.trans.hilic.B1.t <- data.trans.hilic.B1 |> select(hilic.hmdb.combine.IDC$Metabolite.B1)
+data.trans.hilic.B1.t <- as.data.frame(t(data.trans.hilic.B1.t))
+data.trans.hilic.B1.t <- rownames_to_column(data.trans.hilic.B1.t,var = "Metabolite.B1")
+data.trans.hilic.B2.t <- data.trans.hilic.B2 |> select(hilic.hmdb.combine.IDC$Metabolite.B2)
+data.trans.hilic.B2.t <- as.data.frame(t(data.trans.hilic.B2.t))
+data.trans.hilic.B2.t <- rownames_to_column(data.trans.hilic.B2.t,var = "Metabolite.B2")
+
+hilic.hmdb.combine.IDC <- inner_join(hilic.hmdb.combine.IDC,data.trans.hilic.B1.t,by="Metabolite.B1")
+hilic.hmdb.combine.IDC <- inner_join(hilic.hmdb.combine.IDC,data.trans.hilic.B2.t,by="Metabolite.B2")
+hilic.hmdb.combine.IDC <- hilic.hmdb.combine.IDC |> select(-c(Metabolite.B1,Metabolite.B2))
+
+hilic.hmdb.combine.IDC.t <- as.data.frame(t(hilic.hmdb.combine.IDC))
+
+colnames(hilic.hmdb.combine.IDC.t) <- hilic.hmdb.combine.IDC.t["HMDB",]
+hilic.hmdb.combine.IDC.t <- hilic.hmdb.combine.IDC.t[-1,]
+hilic.hmdb.combine.IDC.t$Batch <- rep(c(1,2),each=dim(data.trans.hilic.B1)[1])
+hilic.hmdb.combine.IDC.t$SampleID <- c(data.trans.hilic.B1$sampleID,data.trans.hilic.B2$sampleID)
+hilic.hmdb.combine.IDC.t$Group <- c(data.trans.hilic.B1$Group,data.trans.hilic.B2$Group)
+
+
+data.trans.icms.B1.t <- data.trans.icms.B1 |> select(icms.hmdb.combine.IDC$Metabolite.B1)
+data.trans.icms.B1.t <- as.data.frame(t(data.trans.icms.B1.t))
+data.trans.icms.B1.t <- rownames_to_column(data.trans.icms.B1.t,var = "Metabolite.B1")
+data.trans.icms.B2.t <- data.trans.icms.B2 |> select(icms.hmdb.combine.IDC$Metabolite.B2)
+data.trans.icms.B2.t <- as.data.frame(t(data.trans.icms.B2.t))
+data.trans.icms.B2.t <- rownames_to_column(data.trans.icms.B2.t,var = "Metabolite.B2")
+
+icms.hmdb.combine.IDC <- inner_join(icms.hmdb.combine.IDC,data.trans.icms.B1.t,by="Metabolite.B1")
+icms.hmdb.combine.IDC <- inner_join(icms.hmdb.combine.IDC,data.trans.icms.B2.t,by="Metabolite.B2")
+icms.hmdb.combine.IDC <- icms.hmdb.combine.IDC |> select(-c(Metabolite.B1,Metabolite.B2))
+
+icms.hmdb.combine.IDC.t <- as.data.frame(t(icms.hmdb.combine.IDC))
+
+colnames(icms.hmdb.combine.IDC.t) <- icms.hmdb.combine.IDC.t["HMDB",]
+icms.hmdb.combine.IDC.t <- icms.hmdb.combine.IDC.t[-1,]
+icms.hmdb.combine.IDC.t$Batch <- rep(c(1,2),each=dim(data.trans.icms.B1)[1])
+icms.hmdb.combine.IDC.t$SampleID <- c(data.trans.icms.B1$sampleID,data.trans.icms.B2$sampleID)
+icms.hmdb.combine.IDC.t$Group <- c(data.trans.icms.B1$Group,data.trans.icms.B2$Group)
+
+remove(data.trans.hilic.B1.t,data.trans.hilic.B2.t,data.trans.icms.B1.t,data.trans.icms.B2.t,
+       hilic.hmdb.combine.IDC,hilic.hmdb.combine.IDC.temp,icms.hmdb.combine.IDC,icms.hmdb.combine.IDC.temp,
+       hilic.names.nikki.B1,hilic.names.nikki.B2,icms.names.nikki.B1,icms.names.nikki.B2)
+
+
+dat.frac.temp <- read.csv("W:/Health Services and Outcomes Research/BEC/Brooke Fridley/consult/Cheng.Nikki/R01 DCIS/rpgm/Chase_rpgm/Summary_Info/Tumor_Fraction_Summary.csv", header = FALSE)
+
+dat.frac <- as.data.frame(t(dat.frac.temp))
+dat.frac <- dat.frac[-1,]
+colnames(dat.frac) <- c("sample","diagnosis","tumor_fraction","stroma_fraction")
+rownames(dat.frac) <- 1:nrow(dat.frac)
+
+dat.frac$Batch <- c(rep(1,nrow(dat.frac)/2),rep(2,nrow(dat.frac)/2))
+
+dat.frac <- dat.frac |> mutate(tumor_fraction = as.numeric(as.character(tumor_fraction)))
+dat.frac <- dat.frac |> mutate(stroma_fraction = as.numeric(as.character(stroma_fraction)))
+
+dat.frac$Batch_diag <- paste0("Batch_",dat.frac$Batch,"_",dat.frac$diagnosis)
+
+remove(dat.frac.temp)
+
+dat.tbl <- read.csv("W:/Health Services and Outcomes Research/BEC/Brooke Fridley/consult/Cheng.Nikki/R01 DCIS/rpgm/Chase_rpgm/Summary_Info/Table_S1_62326_CJS.csv")
+dat.tbl[dat.tbl == ""] <- NA
+
+colnames(dat.tbl) <- c("Batch","Source","Patient_ID_no","Diagnosis","Age","Race","Estrogen_receptor",
+                       "Progesterone.receptor","HER2_score","Histologic_grade","Nuclear_grade")
+
+dat.tbl.adj <- dat.tbl
+
+dat.tbl.adj$Batch_diag <- paste0("Batch_",dat.tbl.adj$Batch,"_",dat.tbl.adj$Diagnosis)
+dat.tbl.adj$sampleID <- str_sub(dat.tbl.adj$Patient_ID_no,-6)
+
+dat.tbl.adj$Histologic_grade <- case_when(
+  dat.tbl.adj$Histologic_grade == 1 ~ "1",
+  dat.tbl.adj$Histologic_grade == 2 ~ "2",
+  is.na(dat.tbl.adj$Histologic_grade) ~ NA,
+  .default = "3"
+)
+
+dat.tbl.adj$Nuclear_grade <- case_when(
+  dat.tbl.adj$Nuclear_grade == 1 ~ "1",
+  dat.tbl.adj$Nuclear_grade == 2 ~ "2",
+  is.na(dat.tbl.adj$Nuclear_grade) ~ NA,
+  .default = "3"
+)
+
+dat.tbl.adj$Estrogen_receptor[dat.tbl.adj$Estrogen_receptor == "<1%"] <- 0.5
+dat.tbl.adj$Estrogen_receptor <- as.numeric(dat.tbl.adj$Estrogen_receptor)
+
+dat.tbl.adj$Progesterone.receptor[dat.tbl.adj$Progesterone.receptor == "< 1%"] <- 0.5
+dat.tbl.adj$Progesterone.receptor[dat.tbl.adj$Progesterone.receptor == "<1"] <- 0.5
+dat.tbl.adj$Progesterone.receptor <- as.numeric(dat.tbl.adj$Progesterone.receptor)
+
+dat.tbl.adj <- dat.tbl.adj |> left_join(dat.frac |> select(sample,tumor_fraction,stroma_fraction),
+                                        by = c("Patient_ID_no" = "sample"))
+
+##### PROTEINS #####
+
+load(file ="W:/Health Services and Outcomes Research/BEC/Brooke Fridley/consult/Cheng.Nikki/R01 DCIS/data/processed_data/Protein_processed_data.RData")
+
+data.trans.protein.B1 <- ProteinData$ProteinData
+n.protein.B1 <- ncol(data.trans.protein.B1)-3
+
+load(file ="W:/Health Services and Outcomes Research/BEC/Brooke Fridley/consult/Cheng.Nikki/R01 DCIS/data/processed_data/Protein_processed_new_data.RData")
+
+data.trans.protein.B2 <- ProteinData$ProteinData
+n.protein.B2 <- ncol(data.trans.protein.B2)-2
+
+remove(ProteinData)
+
+data.trans.protein.B1 <- data.trans.protein.B1 |> filter(group != "Normal" & group != "Normal.Adj")
+data.trans.protein.B1$group <- str_replace(data.trans.protein.B1$group,"DCIS.CCR2high","DCIS")
+data.trans.protein.B1$group <- str_replace(data.trans.protein.B1$group,"DCIS.CCR2low","DCIS")
+data.trans.protein.B2$group <- str_replace(data.trans.protein.B2$group,"DCIS.CCR2high","DCIS")
+data.trans.protein.B2$group <- str_replace(data.trans.protein.B2$group,"DCIS.CCR2low","DCIS")
+
+data.protein.match.names <- intersect(colnames(data.trans.protein.B1), colnames(data.trans.protein.B2))
+
+data.trans.protein.B1.match <- data.trans.protein.B1 |> select(all_of(data.protein.match.names))
+data.trans.protein.B2.match <- data.trans.protein.B2 |> select(all_of(data.protein.match.names))
+
+data.trans.protein.combine <- bind_rows(data.trans.protein.B1.match, data.trans.protein.B2.match)
+data.trans.protein.combine$Batch <- rep(1:2,each=dim(data.trans.protein.B1)[1])
+
+n.protein.combine <- dim(data.trans.protein.combine)[2]-3
+
+load(file ="W:/Health Services and Outcomes Research/BEC/Brooke Fridley/consult/Cheng.Nikki/R01 DCIS/data/processed_data/Phosphoprotein_processed_data.RData")
+
+data.trans.pprotein.B1<-PProteinData$pdata
+annonation.pprotein.B1<-PProteinData$annotation
+n.pprotein.B1<-dim(annonation.pprotein.B1)[1]
+
+new.ann.B1 <- paste0(annonation.pprotein.B1$`Master Protein Accessions`,".",annonation.pprotein.B1$`Gene Symbol`,".",
+                     annonation.pprotein.B1$`Annotated Sequence`,".",annonation.pprotein.B1$Modifications)
+for(j in 1:dim(annonation.pprotein.B1)[1]){
+  if(is.na(annonation.pprotein.B1$Modifications[j])){
+    new.ann.B1[j] <- substr(new.ann.B1[j], 1, nchar(new.ann.B1[j]) - 3)
+  }
+}
+colnames(data.trans.pprotein.B1)[2:(n.pprotein.B1+1)] <- new.ann.B1
+
+load(file ="W:/Health Services and Outcomes Research/BEC/Brooke Fridley/consult/Cheng.Nikki/R01 DCIS/data/processed_data/Phosphoprotein_processed_new_data.RData")
+
+data.trans.pprotein.B2<-ProteinData$ProteinData
+annonation.pprotein.B2<-ProteinData$Annotation
+n.pprotein.B2<-dim(annonation.pprotein.B2)[1]
+
+new.ann.B2 <- paste0(annonation.pprotein.B2$`Master Protein Accessions`,".",annonation.pprotein.B2$`Gene Symbol`,".",
+                     annonation.pprotein.B2$`Annotated Sequence`,".",annonation.pprotein.B2$Modifications)
+for(j in 1:dim(annonation.pprotein.B2)[1]){
+  if(is.na(annonation.pprotein.B2$Modifications[j])){
+    new.ann.B2[j] <- substr(new.ann.B2[j], 1, nchar(new.ann.B2[j]) - 3)
+  }
+}
+colnames(data.trans.pprotein.B2)[1:n.pprotein.B2] <- new.ann.B2
+
+
+remove(PProteinData,ProteinData,annonation.pprotein.B1,annonation.pprotein.B2,new.ann.B1,new.ann.B2,j)
+
+data.trans.pprotein.B1 <- data.trans.pprotein.B1 |> filter(group != "Normal" & group != "Normal.Adj")
+data.trans.pprotein.B1$group <- str_replace(data.trans.pprotein.B1$group,"DCIS.CCR2high","DCIS")
+data.trans.pprotein.B1$group <- str_replace(data.trans.pprotein.B1$group,"DCIS.CCR2low","DCIS")
+data.trans.pprotein.B2$group <- str_replace(data.trans.pprotein.B2$group,"DCIS.CCR2high","DCIS")
+data.trans.pprotein.B2$group <- str_replace(data.trans.pprotein.B2$group,"DCIS.CCR2low","DCIS")
+
+tmp.pprotein.DvI.B1<-describeBy(data.trans.pprotein.B1[,2:(n.pprotein.B1+1)], group=data.trans.pprotein.B1$group)
+tmp.pprotein.DvI.B2<-describeBy(data.trans.pprotein.B2[,1:(n.pprotein.B2)], group=data.trans.pprotein.B2$group)
+
+tmp1.pprotein.DvI.B1 <- data.frame(Gene=rownames(tmp.pprotein.DvI.B1[[1]]),
+                                   DCIS.n=tmp.pprotein.DvI.B1[[1]]$n,
+                                   DCIS.mean=tmp.pprotein.DvI.B1[[1]]$mean,
+                                   DCIS.sd=tmp.pprotein.DvI.B1[[1]]$sd,
+                                   IDC.n=tmp.pprotein.DvI.B1[[2]]$n,
+                                   IDC.mean=tmp.pprotein.DvI.B1[[2]]$mean,
+                                   IDC.sd=tmp.pprotein.DvI.B1[[2]]$sd)
+tmp1.pprotein.DvI.B2 <- data.frame(Gene=rownames(tmp.pprotein.DvI.B2[[1]]),
+                                   DCIS.n=tmp.pprotein.DvI.B2[[1]]$n,
+                                   DCIS.mean=tmp.pprotein.DvI.B2[[1]]$mean,
+                                   DCIS.sd=tmp.pprotein.DvI.B2[[1]]$sd,
+                                   IDC.n=tmp.pprotein.DvI.B2[[2]]$n,
+                                   IDC.mean=tmp.pprotein.DvI.B2[[2]]$mean,
+                                   IDC.sd=tmp.pprotein.DvI.B2[[2]]$sd)
+
+pprotein.gene.combine.temp <- inner_join(tmp1.pprotein.DvI.B1,tmp1.pprotein.DvI.B2,by="Gene")
+
+data.trans.pprotein.B1.match <- data.trans.pprotein.B1 |> select(pprotein.gene.combine.temp$Gene)
+data.trans.pprotein.B2.match <- data.trans.pprotein.B2 |> select(pprotein.gene.combine.temp$Gene)
+
+data.trans.pprotein.combine <- bind_rows(data.trans.pprotein.B1.match, data.trans.pprotein.B2.match)
+data.trans.pprotein.combine$SampleID <- c(data.trans.pprotein.B1$sampleID,data.trans.pprotein.B2$sampleID)
+data.trans.pprotein.combine$Group <- c(data.trans.pprotein.B1$group,data.trans.pprotein.B2$group)
+data.trans.pprotein.combine$Batch <- rep(1:2,each=dim(data.trans.pprotein.B1)[1])
+
+n.pprotein.combine <- dim(data.trans.pprotein.combine)[2]-3
+
+
+```
+
+
+
+
+## Table 1
+
+```{r table1, echo=FALSE, warning=FALSE}
+
+dat.tbl.adj |>
+  tbl_summary(include = c(Age, Estrogen_receptor, Progesterone.receptor,
+                          HER2_score, Histologic_grade, Nuclear_grade,
+                          tumor_fraction),
+              by = Diagnosis,
+              type = list(Estrogen_receptor = "continuous",
+                          Progesterone.receptor = "continuous"),
+              label = list(Age ~ "Age (years)",
+                           Estrogen_receptor ~ "Estogren Receptor (%)",
+                           Progesterone.receptor ~ "Progesterone Receptor (%)",
+                           HER2_score ~ "HER2 Score",
+                           Histologic_grade ~ "Histologic Grade",
+                           Nuclear_grade ~ "Nuclear Grade",
+                           tumor_fraction ~ "Proportion of Tumor Cells")
+              ) |>
+  add_p(test.args = all_continuous() ~ list(exact = FALSE)) |>
+  modify_header(label = "**Variable**") |>
+  bold_labels()
+
+
+```
+
+## Principal Component Analysis
+
+```{r pca,echo=FALSE}
+
+hilic.B1.pc <- prcomp(data.trans.hilic.B1[,2:(n.metabolites.hilic.B1+1)], center=TRUE, scale=TRUE)
+hilic.B2.pc <- prcomp(data.trans.hilic.B2[,2:(n.metabolites.hilic.B2+1)], center=TRUE, scale=TRUE)
+icms.B1.pc <- prcomp(data.trans.icms.B1[,2:(n.metabolites.icms.B1+1)], center=TRUE, scale=TRUE)
+icms.B2.pc <- prcomp(data.trans.icms.B2[,2:(n.metabolites.icms.B2+1)], center=TRUE, scale=TRUE)
+
+protein.B1.pc <- prcomp(data.trans.protein.B1[,2:(n.protein.B1+1)], center=TRUE, scale=TRUE)
+protein.B2.pc <- prcomp(data.trans.protein.B2[,1:(n.protein.B2)], center=TRUE, scale=TRUE)
+pprotein.B1.pc <- prcomp(data.trans.pprotein.B1[,2:(n.pprotein.B1+1)], center=TRUE, scale=TRUE)
+pprotein.B2.pc <- prcomp(data.trans.pprotein.B2[,1:(n.pprotein.B2)], center=TRUE, scale=TRUE)
+
+hilic.hmdb.combine.IDC.t[, 1:n.hdmb.hilic] <- lapply(hilic.hmdb.combine.IDC.t[, 1:n.hdmb.hilic],
+                                                     function(x) as.numeric(as.character(x)))
+icms.hmdb.combine.IDC.t[, 1:n.hdmb.icms] <- lapply(icms.hmdb.combine.IDC.t[, 1:n.hdmb.icms],
+                                                     function(x) as.numeric(as.character(x)))
+
+data.trans.protein.combine[, 2:(n.protein.combine+1)] <- lapply(data.trans.protein.combine[, 2:(n.protein.combine+1)],
+                                                            function(x) as.numeric(as.character(x)))
+data.trans.pprotein.combine[, 1:n.pprotein.combine] <- lapply(data.trans.pprotein.combine[, 1:n.pprotein.combine],
+                                                              function(x) as.numeric(as.character(x)))
+
+hilic.pc <- prcomp(hilic.hmdb.combine.IDC.t[,1:(n.hdmb.hilic)], center=TRUE, scale=TRUE)
+icms.pc <- prcomp(icms.hmdb.combine.IDC.t[,1:(n.hdmb.icms)], center=TRUE, scale=TRUE)
+
+protein.pc <- prcomp(data.trans.protein.combine[,2:(n.protein.combine+1)], center=TRUE, scale=TRUE)
+pprotein.pc <- prcomp(data.trans.pprotein.combine[,1:(n.pprotein.combine)], center=TRUE, scale=TRUE)
+
+
+ggplot(hilic.B1.pc$x, aes(x = PC1, y = PC2, col=data.trans.hilic.B1$Group)) +
+  geom_point(size = 4) +
+  guides(color = guide_legend(title = "Group")) +
+  labs(title = "HILIC Batch 1 PCA")
+ggplot(hilic.B2.pc$x, aes(x = PC1, y = PC2, col=data.trans.hilic.B2$Group)) +
+  geom_point(size = 4) +
+  guides(color = guide_legend(title = "Group")) +
+  labs(title = "HILIC Batch 2 PCA")
+ggplot(icms.B1.pc$x, aes(x = PC1, y = PC2, col=data.trans.icms.B1$Group)) +
+  geom_point(size = 4) +
+  guides(color = guide_legend(title = "Group")) +
+  labs(title = "ICMS Batch 1 PCA")
+ggplot(icms.B2.pc$x, aes(x = PC1, y = PC2, col=data.trans.icms.B2$Group)) +
+  geom_point(size = 4) +
+  guides(color = guide_legend(title = "Group")) +
+  labs(title = "ICMS Batch 2 PCA")
+
+ggplot(protein.B1.pc$x, aes(x = PC1, y = PC2, col=data.trans.protein.B1$group)) +
+  geom_point(size = 4) +
+  guides(color = guide_legend(title = "Group")) +
+  labs(title = "Protein Batch 1 PCA")
+ggplot(protein.B2.pc$x, aes(x = PC1, y = PC2, col=data.trans.protein.B2$group)) +
+  geom_point(size = 4) +
+  guides(color = guide_legend(title = "Group")) +
+  labs(title = "Protein Batch 2 PCA")
+ggplot(pprotein.B1.pc$x, aes(x = PC1, y = PC2, col=data.trans.pprotein.B1$group)) +
+  geom_point(size = 4) +
+  guides(color = guide_legend(title = "Group")) +
+  labs(title = "Phosphoprotein Batch 1 PCA")
+ggplot(pprotein.B2.pc$x, aes(x = PC1, y = PC2, col=data.trans.pprotein.B2$group)) +
+  geom_point(size = 4) +
+  guides(color = guide_legend(title = "Group")) +
+  labs(title = "Phosphoprotein Batch 2 PCA")
+
+
+ggplot(hilic.pc$x, aes(x = PC1, y = PC2,
+                       col= factor(hilic.hmdb.combine.IDC.t$Batch),
+                       shape = hilic.hmdb.combine.IDC.t$Group)) +
+  geom_point(size = 4) +
+  guides(color = guide_legend(title = "Batch"),
+         shape = guide_legend(title = "Group")) +
+  labs(title = "HILIC PCA")
+ggplot(icms.pc$x, aes(x = PC1, y = PC2,
+                       col= factor(icms.hmdb.combine.IDC.t$Batch),
+                       shape = icms.hmdb.combine.IDC.t$Group)) +
+  geom_point(size = 4) +
+  guides(color = guide_legend(title = "Batch"),
+         shape = guide_legend(title = "Group")) +
+  labs(title = "ICMS PCA")
+ggplot(protein.pc$x, aes(x = PC1, y = PC2,
+                       col= factor(data.trans.protein.combine$Batch),
+                       shape = data.trans.protein.combine$group)) +
+  geom_point(size = 4) +
+  guides(color = guide_legend(title = "Batch"),
+         shape = guide_legend(title = "Group")) +
+  labs(title = "Protein PCA")
+ggplot(pprotein.pc$x, aes(x = PC1, y = PC2,
+                         col=factor(data.trans.pprotein.combine$Batch),
+                         shape = data.trans.pprotein.combine$Group)) +
+  geom_point(size = 4) +
+  guides(color = guide_legend(title = "Batch"),
+         shape = guide_legend(title = "Group")) +
+  labs(title = "Phosphoprotein PCA")
+
+
+```
+
+
+## Tumor Fractions
+
+```{r fractionplots, echo=FALSE, warning=FALSE, fig.width=6}
+
+ggplot(
+  data = dat.frac,
+  aes(x = Batch_diag, y = tumor_fraction, fill = Batch_diag)
+) +
+  geom_boxplot(outlier.shape = NA, alpha = 0.7) +
+  geom_jitter(width = 0.15, size = 2, alpha = 0.8, color = "black") +
+  theme_bw() +
+  labs(
+    x = "Batch & Diagnosis",
+    y = "Tumor Fraction",
+    title = "Tumor Fraction by Batch & Diagnosis"
+  )
+
+mean_tumor_frac_DCIS_B1 <- dat.frac |>
+  dplyr::filter(Batch == 1 & diagnosis == "DCIS") |>
+  dplyr::pull(tumor_fraction) |>
+  mean(na.rm = TRUE)
+mean_tumor_frac_DCIS_B2 <- dat.frac |>
+  dplyr::filter(Batch == 2 & diagnosis == "DCIS") |>
+  dplyr::pull(tumor_fraction) |>
+  mean(na.rm = TRUE)
+mean_tumor_frac_IDC_B1 <- dat.frac |>
+  dplyr::filter(Batch == 1 & diagnosis == "IDC") |>
+  dplyr::pull(tumor_fraction) |>
+  mean(na.rm = TRUE)
+mean_tumor_frac_IDC_B2 <- dat.frac |>
+  dplyr::filter(Batch == 2 & diagnosis == "IDC") |>
+  dplyr::pull(tumor_fraction) |>
+  mean(na.rm = TRUE)
+
+ttest_Batch1 <- t.test(tumor_fraction ~ diagnosis, data = subset(dat.frac, Batch == 1))
+ttest_Batch2 <- t.test(tumor_fraction ~ diagnosis, data = subset(dat.frac, Batch == 2))
+
+ttest_DCIS <- t.test(tumor_fraction ~ Batch, data = subset(dat.frac, diagnosis == "DCIS"))
+ttest_IDC <- t.test(tumor_fraction ~ Batch, data = subset(dat.frac, diagnosis == "IDC"))
+
+paste0("Mean Tumor Fraction: DCIS & Batch 1 = ", round(mean_tumor_frac_DCIS_B1,4))
+paste0("Mean Tumor Fraction: IDC & Batch 1 = ", round(mean_tumor_frac_IDC_B1,4))
+
+paste0("Mean Tumor Fraction: DCIS & Batch 2 = ", round(mean_tumor_frac_DCIS_B2,4))
+paste0("Mean Tumor Fraction: IDC & Batch 2 = ", round(mean_tumor_frac_IDC_B2,4))
+
+paste0("DCIS vs. IDC: Batch 1 P-value (t-test) = ",round(ttest_Batch1$p.value,5))
+paste0("DCIS vs. IDC: Batch 2 P-value (t-test) = ",round(ttest_Batch2$p.value,5))
+
+paste0("DCIS: Batch 1 vs. Batch 2 P-value (t-test) = ",round(ttest_DCIS$p.value,5))
+paste0("IDC: Batch 1 vs. Batch 2 P-value (t-test) = ",round(ttest_IDC$p.value,5))
+
+
+```
+
+
+## Age
+
+
+```{r agesummary, echo=FALSE, warning=FALSE, fig.width=6}
+
+ggplot(
+  data = dat.tbl.adj,
+  aes(x = Batch_diag, y = Age, fill = Batch_diag)
+) +
+  geom_boxplot(outlier.shape = NA, alpha = 0.7) +
+  geom_jitter(width = 0.15, size = 2, alpha = 0.8, color = "black") +
+  theme_bw() +
+  labs(
+    x = "Batch & Diagnosis",
+    y = "Age",
+    title = "Age by Batch & Diagnosis"
+  )
+
+mean_age_DCIS_B1 <- dat.tbl.adj |>
+  dplyr::filter(Batch == 1 & Diagnosis == "DCIS") |>
+  dplyr::pull(Age) |>
+  mean(na.rm = TRUE)
+mean_age_DCIS_B2 <- dat.tbl.adj |>
+  dplyr::filter(Batch == 2 & Diagnosis == "DCIS") |>
+  dplyr::pull(Age) |>
+  mean(na.rm = TRUE)
+mean_age_IDC_B1 <- dat.tbl.adj |>
+  dplyr::filter(Batch == 1 & Diagnosis == "IDC") |>
+  dplyr::pull(Age) |>
+  mean(na.rm = TRUE)
+mean_age_IDC_B2 <- dat.tbl.adj |>
+  dplyr::filter(Batch == 2 & Diagnosis == "IDC") |>
+  dplyr::pull(Age) |>
+  mean(na.rm = TRUE)
+
+paste0("Mean Age: DCIS & Batch 1 = ", round(mean_age_DCIS_B1,4))
+paste0("Mean Age: IDC & Batch 1 = ", round(mean_age_IDC_B1,4))
+paste0("Mean Age: DCIS & Batch 2 = ", round(mean_age_DCIS_B2,4))
+paste0("Mean Age: IDC & Batch 2 = ", round(mean_age_IDC_B2,4))
+
+```
+
+
+
+
+
+
+
+
+
+
+
+

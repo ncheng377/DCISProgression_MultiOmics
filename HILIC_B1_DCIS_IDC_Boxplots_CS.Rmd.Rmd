@@ -1,0 +1,142 @@
+---
+title: 'DCIS R01: HILIC Batch 1 Boxplots - DCIS vs. IDC'
+author: "Brooke L. Fridley, PhD & Chase J. Sakitis, PhD"
+date: "`r Sys.Date()`"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = FALSE, warning=FALSE, message = FALSE)
+
+library(tidyverse)
+library(ggplot2)
+library(DescTools)
+library(ggpubr) 
+library(stats)
+library(GGally)
+library(missForest)
+library(openxlsx)
+library(psych)
+library(ComplexHeatmap)
+library(circlize)
+library(multtest)
+library(readxl)
+library(metafor)
+library(knitr)
+library(readxl)
+
+```
+
+# Boxplots for HILIC Batch 1 - DCIS vs. IDC (normalized, log, scaled data)
+
+A summary of the various metabolites can be found in the excel file "DCIS_IDC_Meta_analysis_CS.xlsx". In this Excel file, there are separate tabs for analysis of HILIC Batch 1 and 2 and ICMS Batch 1 and 2. There are also tabs for meta analysis between the 2 batches for both HILIC and ICMS. The DCIS.CCR2high and DCIS.CCR2low groups are combined to a DCIS group, increasing the n from 3 to 6 for the DCIS group.  
+
+Meta analysis of DCIS vs IDC between Batch 1 and 2 is in word file "DCIS_IDC_Meta_analysis_CS.docx". 
+
+Total of 429 metabolites.
+
+```{r readdata1, echo=FALSE}
+
+load(file ="W:/Health Services and Outcomes Research/BEC/Brooke Fridley/consult/Cheng.Nikki/R01 DCIS/data/processed_data/HILIC_processed_data.Rdata")
+
+hilic.B1.meta <- read_excel("W:/Health Services and Outcomes Research/BCB/members/Sakitis.Chase/Consult/Cheng.Nikki/Chase_Results/DCIS_IDC_Meta_analysis_CS.xlsx",
+                            sheet = "HILIC.Batch.1")
+
+data.trans.hilic.B1<-HILICdata
+
+n.metabolites.hilic.B1<-ncol(data.trans.hilic.B1)-3
+
+data.trans.hilic.B1 <- data.trans.hilic.B1 |> filter(Group != "Normal")
+data.trans.hilic.B1$Group <- str_replace(data.trans.hilic.B1$Group,"DCIS.CCR2high","DCIS")
+data.trans.hilic.B1$Group <- str_replace(data.trans.hilic.B1$Group,"DCIS.CCR2low","DCIS")
+
+
+```
+
+
+```{r boxplotspvaule, echo=FALSE}
+
+knitr::opts_chunk$set(
+  fig.width  = 3.5,   # inches (choose based on manuscript column width)
+  fig.height = 3.0,   # inches
+  dpi = 300,
+  fig.retina = 1      # important: prevents “retina scaling” side-effects
+)
+
+
+p_vec <- setNames(hilic.B1.meta$T.Test.P.Value, hilic.B1.meta$Metabolite)
+
+for(i in 1:n.metabolites.hilic.B1){
+  metab <- colnames(data.trans.hilic.B1)[i + 1]
+  p_val <- unname(p_vec[metab])  # SAFE: returns NA if not found
+  p_lab <- if (is.na(p_val)) "p = NA" else paste0("p = ", signif(p_val, 3))
+
+  plot1 <- ggplot(data.trans.hilic.B1, aes(x = Group, y = .data[[metab]], fill = Group)) +
+    geom_boxplot(outlier.shape = NA) +
+    geom_jitter(color = "black", width = 0.15) +
+    ggtitle(metab) +
+    labs(
+      title = metab,
+      y = "Normalized–Standardized Abundance"
+      ) +
+    annotate("text", x = Inf, y = Inf, label = p_lab, hjust = 1.1, vjust = 1.5, size=5) +
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1, size = 9),
+      axis.title.y = element_text(size = 10),
+      plot.title  = element_text(size = 10)
+    )
+
+
+  print(plot1)
+}
+
+meta_locs <- c(which(colnames(data.trans.hilic.B1) == "FAD"),
+               which(colnames(data.trans.hilic.B1) == "Asparagine"))
+
+
+for(i in meta_locs){
+  metab <- colnames(data.trans.hilic.B1)[i]
+  p_val <- unname(p_vec[metab])  # SAFE: returns NA if not found
+  p_lab <- if (is.na(p_val)) "p = NA" else paste0("p = ", signif(p_val, 3))
+
+  plot1 <- ggplot(data.trans.hilic.B1, aes(x = Group, y = .data[[metab]], fill = Group)) +
+    geom_boxplot(outlier.shape = NA) +
+    geom_jitter(color = "black", width = 0.15) +
+    ggtitle(metab) +
+    labs(
+      title = metab,
+      y = "Normalized–Standardized Abundance"
+      ) +
+    annotate("text", x = Inf, y = Inf, label = p_lab, hjust = 1.1, vjust = 19, size=5) +
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1, size = 9),
+      axis.title.y = element_text(size = 10),
+      plot.title  = element_text(size = 10)
+    )
+
+  print(plot1)
+}
+
+
+```
+
+
+```{r boxplots, echo=FALSE}
+
+
+# for(i in 1:5){
+#   plot1<-ggplot(data=data.trans.hilic.B1, aes(Group, data.trans.hilic.B1[,i+1], fill = Group))+
+#         geom_boxplot(outlier.shape=NA)+
+#         geom_jitter(color="black")+
+#         xlab("Group")+
+#         ylab("Normalized-Standardized Abundance")+
+#         ggtitle(paste(dimnames(data.trans.hilic.B1)[[2]][i+1]))+
+#         theme(axis.text.x = element_text(angle=45, hjust=1, size=10))
+#   
+#   print(plot1)
+# }
+
+
+```
+

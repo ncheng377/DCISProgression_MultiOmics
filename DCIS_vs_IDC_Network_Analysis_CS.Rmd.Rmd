@@ -1,0 +1,3066 @@
+---
+title: 'DCIS R01: DCIS vs IDC Network Analysis of Metabolite & Protein Data'
+author: "Brooke L. Fridley, PhD & Chase J. Sakitis, PhD"
+date: "`r Sys.Date()`"
+output: word_document
+---
+
+```{r setup, echo=FALSE, include=FALSE}
+
+knitr::opts_chunk$set(echo = FALSE)
+
+library(tidyverse)
+library(ggplot2)
+library(DescTools)
+library(ggpubr) 
+library(stats)
+library(GGally)
+library(missForest)
+library(openxlsx)
+library(psych)
+library(ComplexHeatmap)
+library(circlize)
+#library(multtest)
+library(magrittr)
+library(glasso)
+library(qgraph)
+library(readxl)
+library(NetworkComparisonTest)
+library(igraph)
+library(Matrix)
+
+
+```
+
+
+# Background 
+
+Completed network analysis of the targeted metabolites and proteins to see the relationships between these metabolites and proteins between DCIS and IDC. The features utilized in this analysis were selected from a meta analysis (using FDR of 10%) and with direction from Nikki Cheng's team.  
+
+In constructing the networks, I used Gaussian Graphical Models (GGMs) with a penalty term to get a sparse network (graphical lasso) using the R package glasso. Penalty/sparsity parameter set to rho=0.5,0.75,0.9 for metabolites and rho=0.1,0.25,0.4. The network based on only DIRECT relationships (as opposed to using correlation that uses both direct and indirect associations). Did not use CV to determine optimal penalty due to small sample size (N = 6 DCIS samples and N = 3 IDC samples). From the glasso results, the partial correlation was estimated and used for the qgraph function yielding the network plots. The estimated partial correlations can be found in the "DCIS_IDC_Network_Partial_Correlations_CS.xlsx" Excel spreadsheet. To fit Metabolite/Gene names, new annotations can be found in the  "DCIS_IDC_Network_Analysis_Annontations_CS.xlsx" Excel spreadsheet.
+
+Batch 1 and Batch 2 networks for each analysis was compared using statistical functions from the igraph R package. It was used to compare the following aspects:  
+
+- Number of Nodes (**num_nodes**): Total number of nodes in the graph. Indicates the size of the network.  
+- Number of Edges (**num_edges**): Total number of edges in the graph. Shows how interconnected the nodes are.  
+- Edge Density (**density**): Ratio of the number of edges to the number of possible edges. Measures how densely the graph is populated with edges. Higher density shows more of the total possible edges are present.  
+- Clustering Coefficient (**clustering_coeff**): Measures likelihood (Global) that two neighbors of a node are also connected. Reflects the tendency of nodes to form tightly knit groups. Example: if node A is connected to B and C, then there's a high chance B and C are connected depending on this clustering likelihood coefficient.  
+- Degree Centrality (**degree_centrality**): Counts the number of edges per node.  
+- Betweenness Centrality (**betweenness_centrality**): Measures how often a node appears on the shortest paths between other nodes. Identifies nodes that act as bridges or bottlenecks in the network. Higher value means the node plays a critical role in connecting different parts of the network.  
+- Closeness Centrality (**closeness_centrality**): Measures how close a node is to all other nodes. Indicates how quickly a node can access the rest of the network.  
+
+The overall analysis for each network can be found in the "DCIS_IDC_Network_Batch_Comparison_CS.xlsx" Excel spreadsheet and individual Metabolite/Gene analysis comparing the 2 batches can be found in the "DCIS_IDC_Network_Stat_Comparison_CS.xlsx" Excel spreadsheet.  
+
+**Targeted Totals**  
+-9 samples (6 DCIS vs 3 IDC) on 35 metabolites in ICMS data  
+-9 samples (6 DCIS vs 3 IDC) on 54 metabolites in HILIC data  
+-9 samples (6 DCIS vs 3 IDC) on 3 protein in the Protein data  
+-9 samples (6 DCIS vs 3 IDC) on 7 phosphoproteins in the phosphoprotein data  
+
+
+
+```{r readdata1, echo=FALSE}
+
+targets.hilic<-read_excel("W:/Health Services and Outcomes Research/BEC/Brooke Fridley/consult/Cheng.Nikki/R01 DCIS/results/Chase_Results/targets for network analysis refined 5 15 25_CS.xlsx", sheet="HILIC")
+targets.icms<-read_excel("W:/Health Services and Outcomes Research/BEC/Brooke Fridley/consult/Cheng.Nikki/R01 DCIS/results/Chase_Results/targets for network analysis refined 5 15 25_CS.xlsx", sheet="IC MS")
+targets.proteins<-read_excel("W:/Health Services and Outcomes Research/BEC/Brooke Fridley/consult/Cheng.Nikki/R01 DCIS/results/Chase_Results/targets for network analysis refined 5 15 25_CS.xlsx", sheet="global proteomics")
+targets.pproteins<-read_excel("W:/Health Services and Outcomes Research/BEC/Brooke Fridley/consult/Cheng.Nikki/R01 DCIS/results/Chase_Results/targets for network analysis refined 5 15 25_CS.xlsx", sheet="phosphoproteomics")
+
+
+#### loading processed HILIC data
+load(file ="W:/Health Services and Outcomes Research/BEC/Brooke Fridley/consult/Cheng.Nikki/R01 DCIS/data/processed_data/HILIC_processed_data.RData")
+hilic.data.B1<-HILICdata
+
+load(file ="W:/Health Services and Outcomes Research/BEC/Brooke Fridley/consult/Cheng.Nikki/R01 DCIS/data/processed_data/HILIC_processed_new_data.RData")
+hilic.data.B2<-HILICdata
+
+
+#### loading processed ICMS data
+load(file ="W:/Health Services and Outcomes Research/BEC/Brooke Fridley/consult/Cheng.Nikki/R01 DCIS/data/processed_data/ICMS_processed_data.RData")
+icms.data.B1<-ICMSdata
+
+load(file ="W:/Health Services and Outcomes Research/BEC/Brooke Fridley/consult/Cheng.Nikki/R01 DCIS/data/processed_data/ICMS_processed_new_data.RData")
+icms.data.B2<-ICMSdata
+
+
+#### loading processed Protein data
+load(file ="W:/Health Services and Outcomes Research/BEC/Brooke Fridley/consult/Cheng.Nikki/R01 DCIS/data/processed_data/Protein_processed_data.RData")
+protein.data.B1<-ProteinData$ProteinData
+
+load(file ="W:/Health Services and Outcomes Research/BEC/Brooke Fridley/consult/Cheng.Nikki/R01 DCIS/data/processed_data/Protein_processed_new_data.RData")
+protein.data.B2<-ProteinData$ProteinData
+
+
+#loading processed PhosphoProtein data
+load(file ="W:/Health Services and Outcomes Research/BEC/Brooke Fridley/consult/Cheng.Nikki/R01 DCIS/data/processed_data/Phosphoprotein_processed_data.RData")
+pprotein.data.B1<-PProteinData$pdata
+annonation.pprotein.B1<-PProteinData$annotation
+
+load(file ="W:/Health Services and Outcomes Research/BEC/Brooke Fridley/consult/Cheng.Nikki/R01 DCIS/data/processed_data/Phosphoprotein_processed_new_data.RData")
+pprotein.data.B2<-ProteinData$ProteinData
+annonation.pprotein.B2<-ProteinData$Annotation
+
+# Function to compute key stats
+network_mean_stats <- function(g) {
+  list(
+    num_nodes = vcount(g),
+    num_edges = ecount(g),
+    density = edge_density(g),
+    # avg_path_length = if (is_connected(g)) mean_distance(g) else NA,
+    clustering_coeff = transitivity(g, type = "global"),
+    degree_centrality = mean(degree(g)),
+    betweenness_centrality = mean(betweenness(g))
+    # closeness_centrality = if (is_connected(g)) mean(closeness(g)) else NA
+  )
+}
+
+# Convert precision matrix to partial correlations
+partial.cor <- function(precision.mat) {
+  D <- diag(1 / sqrt(diag(precision.mat)))
+  -D %*% precision.mat %*% D
+}
+
+rho1 <- 0.5
+rho2 <- 0.75
+rho3 <- 0.9
+
+remove(HILICdata,ICMSdata,PProteinData,ProteinData)
+
+```
+
+# DCIS vs IDC 
+
+## Networks for each metabolite for ICMS for Batch 1 and Batch 2
+
+
+```{r icmsnetwork, echo=FALSE, fig.width=11.5, fig.height=7}
+
+#network analysis of icms data for both batches
+
+icms.df.B1<- icms.data.B1 |> filter(Group != "Normal") |> select(-sampleID,-Group)
+icms.df.B2<- icms.data.B2 |> filter(Group != "Normal") |> select(-sampleID,-Group)
+
+ind.icms.B1.target<-colnames(icms.df.B1) %in% targets.icms$Metabolite.B1
+ind.icms.B2.target<-colnames(icms.df.B2) %in% targets.icms$Metabolite.B2
+
+icms.df.B1<-icms.df.B1[,ind.icms.B1.target]
+icms.df.B2<-icms.df.B2[,ind.icms.B2.target]
+
+n.icms <- dim(icms.df.B1)[2]
+
+icms.new.ann.B1.temp <- data.frame(Metabolite.B1=colnames(icms.df.B1))
+icms.new.ann.B2.temp <- data.frame(Metabolite.B2=colnames(icms.df.B2))
+
+icms.new.ann.B1 <- inner_join(icms.new.ann.B1.temp,targets.icms,by = "Metabolite.B1") |> select(Metabolite.B1,HMDB)
+icms.new.ann.B2 <- inner_join(icms.new.ann.B2.temp,targets.icms,by = "Metabolite.B2") |> select(Metabolite.B2,HMDB)
+
+icms.new.ann.B1.sorted <- icms.new.ann.B1[order(icms.new.ann.B1$HMDB),]
+icms.new.ann.B2.sorted <- icms.new.ann.B2[order(icms.new.ann.B2$HMDB),]
+
+icms.new.ann.B1.sorted$New.Name <- paste0(rep("I",n.icms),1:n.icms)
+icms.new.ann.B2.sorted$New.Name <- paste0(rep("I",n.icms),1:n.icms)
+
+colnames(icms.df.B1) <- icms.new.ann.B1$HMDB
+icms.df.B1.sorted <- icms.df.B1[,order(colnames(icms.df.B1))]
+colnames(icms.df.B2) <- icms.new.ann.B2$HMDB
+icms.df.B2.sorted <- icms.df.B2[,order(colnames(icms.df.B2))]
+
+icms.df.B1.s<-var(icms.df.B1.sorted)
+icms.df.B2.s<-var(icms.df.B2.sorted)
+
+icms.df.B1.a.5<-glasso(icms.df.B1.s, rho=rho1)
+icms.df.B2.a.5<-glasso(icms.df.B2.s, rho=rho1)
+icms.df.B1.a.75<-glasso(icms.df.B1.s, rho=rho2)
+icms.df.B2.a.75<-glasso(icms.df.B2.s, rho=rho2)
+icms.df.B1.a.9<-glasso(icms.df.B1.s, rho=rho3)
+icms.df.B2.a.9<-glasso(icms.df.B2.s, rho=rho3)
+
+
+# Convert precision matrix to partial correlations
+icms.partial.B1.5 <- partial.cor(icms.df.B1.a.5$wi)
+icms.partial.B2.5 <- partial.cor(icms.df.B2.a.5$wi)
+icms.partial.B1.75 <- partial.cor(icms.df.B1.a.75$wi)
+icms.partial.B2.75 <- partial.cor(icms.df.B2.a.75$wi)
+icms.partial.B1.9 <- partial.cor(icms.df.B1.a.9$wi)
+icms.partial.B2.9 <- partial.cor(icms.df.B2.a.9$wi)
+
+# Threshold partial correlations
+thresh <- 1e-5  # Set your desired threshold
+icms.partial.B1.5[abs(icms.partial.B1.5) < thresh] <- 0
+icms.partial.B2.5[abs(icms.partial.B2.5) < thresh] <- 0
+icms.partial.B1.75[abs(icms.partial.B1.75) < thresh] <- 0
+icms.partial.B2.75[abs(icms.partial.B2.75) < thresh] <- 0
+icms.partial.B1.9[abs(icms.partial.B1.9) < thresh] <- 0
+icms.partial.B2.9[abs(icms.partial.B2.9) < thresh] <- 0
+
+diag(icms.partial.B1.5) <- 0
+diag(icms.partial.B2.5) <- 0
+diag(icms.partial.B1.75) <- 0
+diag(icms.partial.B2.75) <- 0
+diag(icms.partial.B1.9) <- 0
+diag(icms.partial.B2.9) <- 0
+
+
+# Identify and remove nodes with no remaining edges
+icms.partial.B1.5.connected <- apply(icms.partial.B1.5, 1, function(x) any(x != 0))
+icms.partial.B1.5.filtered <- icms.partial.B1.5[icms.partial.B1.5.connected, icms.partial.B1.5.connected]
+icms.partial.B1.5.labels.filtered <- icms.new.ann.B1.sorted$New.Name[icms.partial.B1.5.connected]
+icms.partial.B2.5.connected <- apply(icms.partial.B2.5, 1, function(x) any(x != 0))
+icms.partial.B2.5.filtered <- icms.partial.B2.5[icms.partial.B2.5.connected, icms.partial.B2.5.connected]
+icms.partial.B2.5.labels.filtered <- icms.new.ann.B2.sorted$New.Name[icms.partial.B2.5.connected]
+
+icms.partial.B1.75.connected <- apply(icms.partial.B1.75, 1, function(x) any(x != 0))
+icms.partial.B1.75.filtered <- icms.partial.B1.75[icms.partial.B1.75.connected, icms.partial.B1.75.connected]
+icms.partial.B1.75.labels.filtered <- icms.new.ann.B1.sorted$New.Name[icms.partial.B1.75.connected]
+icms.partial.B2.75.connected <- apply(icms.partial.B2.75, 1, function(x) any(x != 0))
+icms.partial.B2.75.filtered <- icms.partial.B2.75[icms.partial.B2.75.connected, icms.partial.B2.75.connected]
+icms.partial.B2.75.labels.filtered <- icms.new.ann.B2.sorted$New.Name[icms.partial.B2.75.connected]
+
+icms.partial.B1.9.connected <- apply(icms.partial.B1.9, 1, function(x) any(x != 0))
+icms.partial.B1.9.filtered <- icms.partial.B1.9[icms.partial.B1.9.connected, icms.partial.B1.9.connected]
+icms.partial.B1.9.labels.filtered <- icms.new.ann.B1.sorted$New.Name[icms.partial.B1.9.connected]
+icms.partial.B2.9.connected <- apply(icms.partial.B2.9, 1, function(x) any(x != 0))
+icms.partial.B2.9.filtered <- icms.partial.B2.9[icms.partial.B2.9.connected, icms.partial.B2.9.connected]
+icms.partial.B2.9.labels.filtered <- icms.new.ann.B2.sorted$New.Name[icms.partial.B2.9.connected]
+
+
+# rho=0.5
+layout(matrix(c(1, 2, 3), nrow = 1), widths = c(1, 1, 0.4))
+
+qgraph(icms.partial.B1.5.filtered, labels = icms.partial.B1.5.labels.filtered, arrows = FALSE, diag = FALSE,
+       label.cex = 1.3, vsize = 8, layout = "spring",
+       title = paste0("ICMS data (Batch 1), FDR<0.1, glasso rho=", rho1),
+       nodeNames = icms.new.ann.B1.sorted$HMDB, legend = FALSE)
+qgraph(icms.partial.B2.5.filtered, labels = icms.partial.B2.5.labels.filtered, arrows = FALSE, diag = FALSE,
+       label.cex = 1.3, vsize = 8, layout = "spring",
+       title = paste0("ICMS data (Batch 2), FDR<0.1, glasso rho=", rho1),
+       nodeNames = icms.new.ann.B2.sorted$HMDB, legend = FALSE)
+plot.new()
+legend("left", legend = paste0(icms.new.ann.B2.sorted$New.Name,": ",icms.new.ann.B2.sorted$HMDB), cex = 0.8, bty = "n")
+
+# rho=0.75
+layout(matrix(c(1, 2, 3), nrow = 1), widths = c(1, 1, 0.4))
+
+qgraph(icms.partial.B1.75.filtered, labels = icms.partial.B1.75.labels.filtered, arrows = FALSE, diag = FALSE,
+       label.cex = 1.3, vsize = 8, layout = "spring",
+       title = paste0("ICMS data (Batch 1), FDR<0.1, glasso rho=", rho2),
+       nodeNames = icms.new.ann.B1.sorted$HMDB, legend = FALSE)
+qgraph(icms.partial.B2.75.filtered, labels = icms.partial.B2.75.labels.filtered, arrows = FALSE, diag = FALSE,
+       label.cex = 1.3, vsize = 8, layout = "spring",
+       title = paste0("ICMS data (Batch 2), FDR<0.1, glasso rho=", rho2),
+       nodeNames = icms.new.ann.B2.sorted$HMDB, legend = FALSE)
+plot.new()
+legend("left", legend = paste0(icms.new.ann.B2.sorted$New.Name,": ",icms.new.ann.B2.sorted$HMDB), cex = 0.8, bty = "n")
+
+# rho=0.9
+layout(matrix(c(1, 2, 3), nrow = 1), widths = c(1, 1, 0.4))
+
+qgraph(icms.partial.B1.9.filtered, labels = icms.partial.B1.9.labels.filtered, arrows = FALSE, diag = FALSE,
+       label.cex = 1.3, vsize = 8, layout = "spring",
+       title = paste0("ICMS data (Batch 1), FDR<0.1, glasso rho=", rho3),
+       nodeNames = icms.new.ann.B1.sorted$HMDB, legend = FALSE)
+qgraph(icms.partial.B2.9.filtered, labels = icms.partial.B2.9.labels.filtered, arrows = FALSE, diag = FALSE,
+       label.cex = 1.3, vsize = 8, layout = "spring",
+       title = paste0("ICMS data (Batch 2), FDR<0.1, glasso rho=", rho3),
+       nodeNames = icms.new.ann.B2.sorted$HMDB, legend = FALSE)
+plot.new()
+legend("left", legend = paste0(icms.new.ann.B2.sorted$New.Name,": ",icms.new.ann.B2.sorted$HMDB), cex = 0.8, bty = "n")
+
+
+# icms.prec.B1.5 <- icms.df.B1.a.5$wi
+# icms.prec.B2.5 <- icms.df.B2.a.5$wi
+# icms.prec.B1.75 <- icms.df.B1.a.75$wi
+# icms.prec.B2.75 <- icms.df.B2.a.75$wi
+# icms.prec.B1.9 <- icms.df.B1.a.9$wi
+# icms.prec.B2.9 <- icms.df.B2.a.9$wi
+
+# Convert to adjacency matrices (non-zero off-diagonal entries indicate edges)
+icms.adj.B1.5 <- (abs(icms.partial.B1.5) > 1e-5) * 1
+diag(icms.adj.B1.5) <- 0
+icms.adj.B2.5 <- (abs(icms.partial.B2.5) > 1e-5) * 1
+diag(icms.adj.B2.5) <- 0
+icms.adj.B1.75 <- (abs(icms.partial.B1.75) > 1e-5) * 1
+diag(icms.adj.B1.75) <- 0
+icms.adj.B2.75 <- (abs(icms.partial.B2.75) > 1e-5) * 1
+diag(icms.adj.B2.75) <- 0
+icms.adj.B1.9 <- (abs(icms.partial.B1.9) > 1e-5) * 1
+diag(icms.adj.B1.9) <- 0
+icms.adj.B2.9 <- (abs(icms.partial.B2.9) > 1e-5) * 1
+diag(icms.adj.B2.9) <- 0
+
+icms.g.B1.5 <- graph_from_adjacency_matrix(icms.adj.B1.5, mode = "undirected", diag = FALSE)
+icms.g.B2.5 <- graph_from_adjacency_matrix(icms.adj.B2.5, mode = "undirected", diag = FALSE)
+icms.g.B1.75 <- graph_from_adjacency_matrix(icms.adj.B1.75, mode = "undirected", diag = FALSE)
+icms.g.B2.75 <- graph_from_adjacency_matrix(icms.adj.B2.75, mode = "undirected", diag = FALSE)
+icms.g.B1.9 <- graph_from_adjacency_matrix(icms.adj.B1.9, mode = "undirected", diag = FALSE)
+icms.g.B2.9 <- graph_from_adjacency_matrix(icms.adj.B2.9, mode = "undirected", diag = FALSE)
+
+icms.stats.B1.5 <- network_mean_stats(icms.g.B1.5)
+icms.stats.B2.5 <- network_mean_stats(icms.g.B2.5)
+icms.stats.B1.75 <- network_mean_stats(icms.g.B1.75)
+icms.stats.B2.75 <- network_mean_stats(icms.g.B2.75)
+icms.stats.B1.9 <- network_mean_stats(icms.g.B1.9)
+icms.stats.B2.9 <- network_mean_stats(icms.g.B2.9)
+
+# Compare
+icms.stats.comparison.5 <- data.frame(
+  Metric = names(icms.stats.B1.5),
+  Batch1 = unlist(icms.stats.B1.5),
+  Batch2 = unlist(icms.stats.B2.5)
+)
+icms.stats.comparison.75 <- data.frame(
+  Metric = names(icms.stats.B1.75),
+  Batch1 = unlist(icms.stats.B1.75),
+  Batch2 = unlist(icms.stats.B2.75)
+)
+icms.stats.comparison.9 <- data.frame(
+  Metric = names(icms.stats.B1.9),
+  Batch1 = unlist(icms.stats.B1.9),
+  Batch2 = unlist(icms.stats.B2.9)
+)
+
+
+# Compare (Metabolite Level)
+icms.network.stats.5.B1 <- data.frame(Metabolite.B1=icms.new.ann.B1.sorted$Metabolite.B1,
+                                      HMDB=icms.new.ann.B1.sorted$HMDB,
+                                   degree.central.B1.rho.0.5=degree(icms.g.B1.5),
+                                   betweenness.B1.rho.0.5=betweenness(icms.g.B1.5),
+                                   closeness.B1.rho.0.5=closeness(icms.g.B1.5)
+                                   )
+icms.network.stats.5.B2 <- data.frame(Metabolite.B2=icms.new.ann.B2.sorted$Metabolite.B2,
+                                      HMDB=icms.new.ann.B2.sorted$HMDB,
+                                   degree.central.B2.rho.0.5=degree(icms.g.B2.5),
+                                   betweenness.B2.rho.0.5=betweenness(icms.g.B2.5),
+                                   closeness.B2.rho.0.5=closeness(icms.g.B2.5)
+                                   )
+icms.network.stats.75.B1 <- data.frame(Metabolite.B1=icms.new.ann.B1.sorted$Metabolite.B1,
+                                       HMDB=icms.new.ann.B1.sorted$HMDB,
+                                   degree.central.B1.rho.0.75=degree(icms.g.B1.75),
+                                   betweenness.B1.rho.0.75=betweenness(icms.g.B1.75),
+                                   closeness.B1.rho.0.75=closeness(icms.g.B1.75)
+                                   )
+icms.network.stats.75.B2 <- data.frame(Metabolite.B2=icms.new.ann.B2.sorted$Metabolite.B2,
+                                       HMDB=icms.new.ann.B2.sorted$HMDB,
+                                   degree.central.B2.rho.0.75=degree(icms.g.B2.75),
+                                   betweenness.B2.rho.0.75=betweenness(icms.g.B2.75),
+                                   closeness.B2.rho.0.75=closeness(icms.g.B2.75)
+                                   )
+icms.network.stats.9.B1 <- data.frame(Metabolite.B1=icms.new.ann.B1.sorted$Metabolite.B1,
+                                      HMDB=icms.new.ann.B1.sorted$HMDB,
+                                   degree.central.B1.rho.0.9=degree(icms.g.B1.9),
+                                   betweenness.B1.rho.0.9=betweenness(icms.g.B1.9),
+                                   closeness.B1.rho.0.9=closeness(icms.g.B1.9)
+                                   )
+icms.network.stats.9.B2 <- data.frame(Metabolite.B2=icms.new.ann.B2.sorted$Metabolite.B2,
+                                      HMDB=icms.new.ann.B2.sorted$HMDB,
+                                   degree.central.B2.rho.0.9=degree(icms.g.B2.9),
+                                   betweenness.B2.rho.0.9=betweenness(icms.g.B2.9),
+                                   closeness.B2.rho.0.9=closeness(icms.g.B2.9)
+                                   )
+
+icms.network.stats.5 <- inner_join(icms.network.stats.5.B1,icms.network.stats.5.B2,by = "HMDB") |>
+  select(HMDB,Metabolite.B1,Metabolite.B2,degree.central.B1.rho.0.5,degree.central.B2.rho.0.5,
+         betweenness.B1.rho.0.5,betweenness.B2.rho.0.5,closeness.B1.rho.0.5,closeness.B2.rho.0.5)
+icms.network.stats.75 <- inner_join(icms.network.stats.75.B1,icms.network.stats.75.B2,by = "HMDB") |>
+  select(HMDB,Metabolite.B1,Metabolite.B2,degree.central.B1.rho.0.75,degree.central.B2.rho.0.75,
+         betweenness.B1.rho.0.75,betweenness.B2.rho.0.75,closeness.B1.rho.0.75,closeness.B2.rho.0.75)
+icms.network.stats.9 <- inner_join(icms.network.stats.9.B1,icms.network.stats.9.B2,by = "HMDB") |>
+  select(HMDB,Metabolite.B1,Metabolite.B2,degree.central.B1.rho.0.9,degree.central.B2.rho.0.9,
+         betweenness.B1.rho.0.9,betweenness.B2.rho.0.9,closeness.B1.rho.0.9,closeness.B2.rho.0.9)
+
+icms.network.stats.5[is.na(icms.network.stats.5)] <- 0
+icms.network.stats.75[is.na(icms.network.stats.75)] <- 0
+icms.network.stats.9[is.na(icms.network.stats.9)] <- 0
+
+```
+
+
+```{r icms_plots, echo=FALSE, fig.width=6, fig.height=4}
+
+
+icms.stats.comparison.num.edges <- data.frame(Batch=rep(c("Batch1","Batch2"),each=3),
+                                              rho=rep(c(0.5,0.75,0.9),times=2),
+                                              num_edges=rbind(icms.stats.comparison.5["num_edges","Batch1"],
+                                                              icms.stats.comparison.75["num_edges","Batch1"],
+                                                              icms.stats.comparison.9["num_edges","Batch1"],
+                                                              icms.stats.comparison.5["num_edges","Batch2"],
+                                                              icms.stats.comparison.75["num_edges","Batch2"],
+                                                              icms.stats.comparison.9["num_edges","Batch2"])
+)
+icms.stats.comparison.density <- data.frame(Batch=rep(c("Batch1","Batch2"),each=3),
+                                              rho=rep(c(0.5,0.75,0.9),times=2),
+                                              density=rbind(icms.stats.comparison.5["density","Batch1"],
+                                                              icms.stats.comparison.75["density","Batch1"],
+                                                              icms.stats.comparison.9["density","Batch1"],
+                                                              icms.stats.comparison.5["density","Batch2"],
+                                                              icms.stats.comparison.75["density","Batch2"],
+                                                              icms.stats.comparison.9["density","Batch2"])
+)
+icms.stats.comparison.clust.coeff <- data.frame(Batch=rep(c("Batch1","Batch2"),each=3),
+                                              rho=rep(c(0.5,0.75,0.9),times=2),
+                                              clustering_coeff=rbind(icms.stats.comparison.5["clustering_coeff","Batch1"],
+                                                              icms.stats.comparison.75["clustering_coeff","Batch1"],
+                                                              icms.stats.comparison.9["clustering_coeff","Batch1"],
+                                                              icms.stats.comparison.5["clustering_coeff","Batch2"],
+                                                              icms.stats.comparison.75["clustering_coeff","Batch2"],
+                                                              icms.stats.comparison.9["clustering_coeff","Batch2"])
+)
+icms.stats.comparison.degree.cent <- data.frame(Batch=rep(c("Batch1","Batch2"),each=3),
+                                              rho=rep(c(0.5,0.75,0.9),times=2),
+                                              degree_centrality=rbind(icms.stats.comparison.5["degree_centrality","Batch1"],
+                                                              icms.stats.comparison.75["degree_centrality","Batch1"],
+                                                              icms.stats.comparison.9["degree_centrality","Batch1"],
+                                                              icms.stats.comparison.5["degree_centrality","Batch2"],
+                                                              icms.stats.comparison.75["degree_centrality","Batch2"],
+                                                              icms.stats.comparison.9["degree_centrality","Batch2"])
+)
+icms.stats.comparison.between.cent <- data.frame(Batch=rep(c("Batch1","Batch2"),each=3),
+                                              rho=rep(c(0.5,0.75,0.9),times=2),
+                                              betweenness_centrality=rbind(icms.stats.comparison.5["betweenness_centrality","Batch1"],
+                                                              icms.stats.comparison.75["betweenness_centrality","Batch1"],
+                                                              icms.stats.comparison.9["betweenness_centrality","Batch1"],
+                                                              icms.stats.comparison.5["betweenness_centrality","Batch2"],
+                                                              icms.stats.comparison.75["betweenness_centrality","Batch2"],
+                                                              icms.stats.comparison.9["betweenness_centrality","Batch2"])
+)
+
+ggplot(icms.stats.comparison.num.edges,aes(x=rho,y=num_edges,color=Batch)) +
+  geom_point(size=2) +
+  geom_line() +
+  labs(y = "Number of Edges") +
+  ggtitle("ICMS: Batch Comparison - Number of Edges") +
+  theme_minimal()
+ggplot(icms.stats.comparison.density,aes(x=rho,y=density,color=Batch)) +
+  geom_point(size=2) +
+  geom_line() +
+  labs(y = "Density") +
+  ggtitle("ICMS: Batch Comparison - Density") +
+  theme_minimal()
+ggplot(icms.stats.comparison.clust.coeff,aes(x=rho,y=clustering_coeff,color=Batch)) +
+  geom_point(size=2) +
+  geom_line() +
+  labs(y = "Clustering Coefficient") +
+  ggtitle("ICMS: Batch Comparison - Clustering Coefficient") +
+  theme_minimal()
+ggplot(icms.stats.comparison.degree.cent,aes(x=rho,y=degree_centrality,color=Batch)) +
+  geom_point(size=2) +
+  geom_line() +
+  labs(y = "Degree Centrality") +
+  ggtitle("ICMS: Batch Comparison - Degree Centrality") +
+  theme_minimal()
+ggplot(icms.stats.comparison.between.cent,aes(x=rho,y=betweenness_centrality,color=Batch)) +
+  geom_point(size=2) +
+  geom_line() +
+  labs(y = "Betweenness Centrality") +
+  ggtitle("ICMS: Batch Comparison - Betweenness Centrality") +
+  theme_minimal()
+
+```
+
+
+```{r icms_heatmap, echo=FALSE, fig.width=10, fig.height=10}
+
+icms.network.stats.num.edges <- data.frame(
+  rho.0.5.B1 = icms.network.stats.5[,"degree.central.B1.rho.0.5"],
+  rho.0.75.B1 = icms.network.stats.75[,"degree.central.B1.rho.0.75"],
+  rho.0.9.B1 = icms.network.stats.9[,"degree.central.B1.rho.0.9"],
+  rho.0.5.B2 = icms.network.stats.5[,"degree.central.B2.rho.0.5"],
+  rho.0.75.B2 = icms.network.stats.75[,"degree.central.B2.rho.0.75"],
+  rho.0.9.B2 = icms.network.stats.9[,"degree.central.B2.rho.0.9"]
+)
+rownames(icms.network.stats.num.edges) <- icms.network.stats.5$HMDB
+
+icms.network.stats.between <- data.frame(
+  rho.0.5.B1 = icms.network.stats.5[,"betweenness.B1.rho.0.5"],
+  rho.0.75.B1 = icms.network.stats.75[,"betweenness.B1.rho.0.75"],
+  rho.0.9.B1 = icms.network.stats.9[,"betweenness.B1.rho.0.9"],
+  rho.0.5.B2 = icms.network.stats.5[,"betweenness.B2.rho.0.5"],
+  rho.0.75.B2 = icms.network.stats.75[,"betweenness.B2.rho.0.75"],
+  rho.0.9.B2 = icms.network.stats.9[,"betweenness.B2.rho.0.9"]
+)
+rownames(icms.network.stats.between) <- icms.network.stats.5$HMDB
+
+icms.network.stats.close <- data.frame(
+  rho.0.5.B1 = icms.network.stats.5[,"closeness.B1.rho.0.5"],
+  rho.0.75.B1 = icms.network.stats.75[,"closeness.B1.rho.0.75"],
+  rho.0.9.B1 = icms.network.stats.9[,"closeness.B1.rho.0.9"],
+  rho.0.5.B2 = icms.network.stats.5[,"closeness.B2.rho.0.5"],
+  rho.0.75.B2 = icms.network.stats.75[,"closeness.B2.rho.0.75"],
+  rho.0.9.B2 = icms.network.stats.9[,"closeness.B2.rho.0.9"]
+)
+rownames(icms.network.stats.close) <- icms.network.stats.5$HMDB
+
+Batches_icms <- c(rep("B1",3),rep("B2",3))
+rho_str_icms <- rep(c(rho1,rho2,rho3),times=2)
+col_anno_icms <- data.frame(Batch = Batches_icms, Rho = rho_str_icms)
+ha_icms <- HeatmapAnnotation(df = col_anno_icms,
+                        col = list(Batch = c("B1" = "gray", "B2" = "orange"),
+                                   Rho = c("0.5" = "purple", "0.75" = "brown", "0.9" = "green")),
+                        show_legend = TRUE)
+
+rownames(col_anno_icms) <- colnames(icms.network.stats.num.edges)
+rownames(col_anno_icms) <- colnames(icms.network.stats.between)
+rownames(col_anno_icms) <- colnames(icms.network.stats.close)
+
+Heatmap(as.matrix(scale(icms.network.stats.num.edges)),
+        top_annotation = ha_icms,
+        column_split = Batches_icms,
+        column_title = "ICMS: Number of Edges (Scaled)",
+        column_title_gp = gpar(fontsize = 15),
+        row_names_gp = gpar(fontsize = 10),
+        cluster_columns = FALSE,
+        cluster_rows = TRUE,
+        show_column_names = FALSE,
+        show_row_dend = FALSE,
+        show_column_dend = FALSE,
+        heatmap_legend_param = list(title = "Score")
+        )
+
+Heatmap(as.matrix(scale(icms.network.stats.between)),
+        top_annotation = ha_icms,
+        column_split = Batches_icms,
+        column_title = "ICMS: Betweenness (Scaled)",
+        column_title_gp = gpar(fontsize = 15),
+        row_names_gp = gpar(fontsize = 10),
+        cluster_columns = FALSE,
+        cluster_rows = TRUE,
+        show_column_names = FALSE,
+        show_row_dend = FALSE,
+        show_column_dend = FALSE,
+        heatmap_legend_param = list(title = "Score")
+        )
+
+Heatmap(as.matrix(scale(icms.network.stats.close)),
+        top_annotation = ha_icms,
+        column_split = Batches_icms,
+        column_title = "ICMS: Closeness (Scaled)",
+        column_title_gp = gpar(fontsize = 15),
+        row_names_gp = gpar(fontsize = 10),
+        cluster_columns = FALSE,
+        cluster_rows = TRUE,
+        show_column_names = FALSE,
+        show_row_dend = FALSE,
+        show_column_dend = FALSE,
+        heatmap_legend_param = list(title = "Score")
+        )
+  
+
+
+```
+
+```{r icms_remove, echo=FALSE}
+
+remove(icms.network.stats.5.B1,icms.network.stats.5.B2,icms.network.stats.75.B1,icms.network.stats.75.B2,
+       icms.network.stats.9.B1,icms.network.stats.9.B2)
+
+```
+
+
+
+## Networks for each metabolite for HILIC for Batch 1 and Batch 2
+
+
+
+```{r hilicnetwork, echo=FALSE, fig.width=11.5, fig.height=7}
+
+#network analysis of hilic data for both batches
+
+hilic.df.B1<- hilic.data.B1 |> filter(Group != "Normal") |> select(-sampleID,-Group)
+hilic.df.B2<- hilic.data.B2 |> filter(Group != "Normal") |> select(-sampleID,-Group)
+
+ind.hilic.B1.target<-colnames(hilic.df.B1) %in% targets.hilic$Metabolite.B1
+ind.hilic.B2.target<-colnames(hilic.df.B2) %in% targets.hilic$Metabolite.B2
+
+hilic.df.B1<-hilic.df.B1[,ind.hilic.B1.target]
+hilic.df.B2<-hilic.df.B2[,ind.hilic.B2.target]
+
+n.hilic <- dim(hilic.df.B1)[2]
+
+hilic.new.ann.B1.temp <- data.frame(Metabolite.B1=colnames(hilic.df.B1))
+hilic.new.ann.B2.temp <- data.frame(Metabolite.B2=colnames(hilic.df.B2))
+
+hilic.new.ann.B1 <- inner_join(hilic.new.ann.B1.temp,targets.hilic,by = "Metabolite.B1") |> select(Metabolite.B1,HMDB)
+hilic.new.ann.B2 <- inner_join(hilic.new.ann.B2.temp,targets.hilic,by = "Metabolite.B2") |> select(Metabolite.B2,HMDB)
+
+hilic.new.ann.B1.sorted <- hilic.new.ann.B1[order(hilic.new.ann.B1$HMDB),]
+hilic.new.ann.B2.sorted <- hilic.new.ann.B2[order(hilic.new.ann.B2$HMDB),]
+
+hilic.new.ann.B1.sorted$New.Name <- paste0(rep("H",n.hilic),1:n.hilic)
+hilic.new.ann.B2.sorted$New.Name <- paste0(rep("H",n.hilic),1:n.hilic)
+
+colnames(hilic.df.B1) <- hilic.new.ann.B1$HMDB
+hilic.df.B1.sorted <- hilic.df.B1[,order(colnames(hilic.df.B1))]
+colnames(hilic.df.B2) <- hilic.new.ann.B2$HMDB
+hilic.df.B2.sorted <- hilic.df.B2[,order(colnames(hilic.df.B2))]
+
+hilic.df.B1.s<-var(hilic.df.B1.sorted)
+hilic.df.B2.s<-var(hilic.df.B2.sorted)
+
+hilic.df.B1.a.5<-glasso(hilic.df.B1.s, rho=rho1)
+hilic.df.B2.a.5<-glasso(hilic.df.B2.s, rho=rho1)
+hilic.df.B1.a.75<-glasso(hilic.df.B1.s, rho=rho2)
+hilic.df.B2.a.75<-glasso(hilic.df.B2.s, rho=rho2)
+hilic.df.B1.a.9<-glasso(hilic.df.B1.s, rho=rho3)
+hilic.df.B2.a.9<-glasso(hilic.df.B2.s, rho=rho3)
+
+# Convert precision matrix to partial correlations
+hilic.partial.B1.5 <- partial.cor(hilic.df.B1.a.5$wi)
+hilic.partial.B2.5 <- partial.cor(hilic.df.B2.a.5$wi)
+hilic.partial.B1.75 <- partial.cor(hilic.df.B1.a.75$wi)
+hilic.partial.B2.75 <- partial.cor(hilic.df.B2.a.75$wi)
+hilic.partial.B1.9 <- partial.cor(hilic.df.B1.a.9$wi)
+hilic.partial.B2.9 <- partial.cor(hilic.df.B2.a.9$wi)
+
+# Threshold partial correlations
+thresh <- 1e-5  # Set your desired threshold
+hilic.partial.B1.5[abs(hilic.partial.B1.5) < thresh] <- 0
+hilic.partial.B2.5[abs(hilic.partial.B2.5) < thresh] <- 0
+hilic.partial.B1.75[abs(hilic.partial.B1.75) < thresh] <- 0
+hilic.partial.B2.75[abs(hilic.partial.B2.75) < thresh] <- 0
+hilic.partial.B1.9[abs(hilic.partial.B1.9) < thresh] <- 0
+hilic.partial.B2.9[abs(hilic.partial.B2.9) < thresh] <- 0
+
+diag(hilic.partial.B1.5) <- 0
+diag(hilic.partial.B2.5) <- 0
+diag(hilic.partial.B1.75) <- 0
+diag(hilic.partial.B2.75) <- 0
+diag(hilic.partial.B1.9) <- 0
+diag(hilic.partial.B2.9) <- 0
+
+
+# Identify and remove nodes with no remaining edges
+hilic.partial.B1.5.connected <- apply(hilic.partial.B1.5, 1, function(x) any(x != 0))
+hilic.partial.B1.5.filtered <- hilic.partial.B1.5[hilic.partial.B1.5.connected, hilic.partial.B1.5.connected]
+hilic.partial.B1.5.labels.filtered <- hilic.new.ann.B1.sorted$New.Name[hilic.partial.B1.5.connected]
+hilic.partial.B2.5.connected <- apply(hilic.partial.B2.5, 1, function(x) any(x != 0))
+hilic.partial.B2.5.filtered <- hilic.partial.B2.5[hilic.partial.B2.5.connected, hilic.partial.B2.5.connected]
+hilic.partial.B2.5.labels.filtered <- hilic.new.ann.B2.sorted$New.Name[hilic.partial.B2.5.connected]
+
+hilic.partial.B1.75.connected <- apply(hilic.partial.B1.75, 1, function(x) any(x != 0))
+hilic.partial.B1.75.filtered <- hilic.partial.B1.75[hilic.partial.B1.75.connected, hilic.partial.B1.75.connected]
+hilic.partial.B1.75.labels.filtered <- hilic.new.ann.B1.sorted$New.Name[hilic.partial.B1.75.connected]
+hilic.partial.B2.75.connected <- apply(hilic.partial.B2.75, 1, function(x) any(x != 0))
+hilic.partial.B2.75.filtered <- hilic.partial.B2.75[hilic.partial.B2.75.connected, hilic.partial.B2.75.connected]
+hilic.partial.B2.75.labels.filtered <- hilic.new.ann.B2.sorted$New.Name[hilic.partial.B2.75.connected]
+
+hilic.partial.B1.9.connected <- apply(hilic.partial.B1.9, 1, function(x) any(x != 0))
+hilic.partial.B1.9.filtered <- hilic.partial.B1.9[hilic.partial.B1.9.connected, hilic.partial.B1.9.connected]
+hilic.partial.B1.9.labels.filtered <- hilic.new.ann.B1.sorted$New.Name[hilic.partial.B1.9.connected]
+hilic.partial.B2.9.connected <- apply(hilic.partial.B2.9, 1, function(x) any(x != 0))
+hilic.partial.B2.9.filtered <- hilic.partial.B2.9[hilic.partial.B2.9.connected, hilic.partial.B2.9.connected]
+hilic.partial.B2.9.labels.filtered <- hilic.new.ann.B2.sorted$New.Name[hilic.partial.B2.9.connected]
+
+# rho=0.5
+layout(matrix(c(1, 2, 3), nrow = 1), widths = c(1, 1, 0.4))
+
+qgraph(hilic.partial.B1.5.filtered, labels = hilic.partial.B1.5.labels.filtered, arrows = FALSE, diag = FALSE,
+       label.cex = 1.3, vsize = 7, layout = "spring",
+       title = paste0("HILIC data (Batch 1), FDR<0.1, glasso rho=", rho1),
+       nodeNames = hilic.new.ann.B1.sorted$HMDB, legend = FALSE)
+qgraph(hilic.partial.B2.5.filtered, labels = hilic.partial.B2.5.labels.filtered, arrows = FALSE, diag = FALSE,
+       label.cex = 1.3, vsize = 7, layout = "spring",
+       title = paste0("HILIC data (Batch 2), FDR<0.1, glasso rho=", rho1),
+       nodeNames = hilic.new.ann.B2.sorted$HMDB, legend = FALSE)
+plot.new()
+legend("left", legend = paste0(hilic.new.ann.B2.sorted$New.Name,": ",hilic.new.ann.B2.sorted$HMDB), cex = 0.8, bty = "n")
+
+# rho=0.75
+layout(matrix(c(1, 2, 3), nrow = 1), widths = c(1, 1, 0.4))
+
+qgraph(hilic.partial.B1.75.filtered, labels = hilic.partial.B1.75.labels.filtered, arrows = FALSE, diag = FALSE,
+       label.cex = 1.3, vsize = 7, layout = "spring",
+       title = paste0("HILIC data (Batch 1), FDR<0.1, glasso rho=", rho2),
+       nodeNames = hilic.new.ann.B1.sorted$HMDB, legend = FALSE)
+qgraph(hilic.partial.B2.75.filtered, labels = hilic.partial.B2.75.labels.filtered, arrows = FALSE, diag = FALSE,
+       label.cex = 1.3, vsize = 7, layout = "spring",
+       title = paste0("HILIc data (Batch 2), FDR<0.1, glasso rho=", rho2),
+       nodeNames = hilic.new.ann.B2.sorted$HMDB, legend = FALSE)
+plot.new()
+legend("left", legend = paste0(hilic.new.ann.B2.sorted$New.Name,": ",hilic.new.ann.B2.sorted$HMDB), cex = 0.8, bty = "n")
+
+# rho=0.9
+layout(matrix(c(1, 2, 3), nrow = 1), widths = c(1, 1, 0.4))
+
+qgraph(hilic.partial.B1.9.filtered, labels = hilic.partial.B1.9.labels.filtered, arrows = FALSE, diag = FALSE,
+       label.cex = 1.3, vsize = 7, layout = "spring",
+       title = paste0("HILIC data (Batch 1), FDR<0.1, glasso rho=", rho3),
+       nodeNames = hilic.new.ann.B1.sorted$HMDB, legend = FALSE)
+qgraph(hilic.partial.B2.9.filtered, labels = hilic.partial.B2.9.labels.filtered, arrows = FALSE, diag = FALSE,
+       label.cex = 1.3, vsize = 7, layout = "spring",
+       title = paste0("HILIC data (Batch 2), FDR<0.1, glasso rho=", rho3),
+       nodeNames = hilic.new.ann.B2.sorted$HMDB, legend = FALSE)
+plot.new()
+legend("left", legend = paste0(hilic.new.ann.B2.sorted$New.Name,": ",hilic.new.ann.B2.sorted$HMDB), cex = 0.8, bty = "n")
+
+
+# hilic.prec.B1.5 <- hilic.df.B1.a.5$wi
+# hilic.prec.B2.5 <- hilic.df.B2.a.5$wi
+# hilic.prec.B1.75 <- hilic.df.B1.a.75$wi
+# hilic.prec.B2.75 <- hilic.df.B2.a.75$wi
+# hilic.prec.B1.9 <- hilic.df.B1.a.9$wi
+# hilic.prec.B2.9 <- hilic.df.B2.a.9$wi
+
+# Convert to adjacency matrices (non-zero off-diagonal entries indicate edges)
+hilic.adj.B1.5 <- (abs(hilic.partial.B1.5) > 1e-5) * 1
+diag(hilic.adj.B1.5) <- 0
+hilic.adj.B2.5 <- (abs(hilic.partial.B2.5) > 1e-5) * 1
+diag(hilic.adj.B2.5) <- 0
+hilic.adj.B1.75 <- (abs(hilic.partial.B1.75) > 1e-5) * 1
+diag(hilic.adj.B1.75) <- 0
+hilic.adj.B2.75 <- (abs(hilic.partial.B2.75) > 1e-5) * 1
+diag(hilic.adj.B2.75) <- 0
+hilic.adj.B1.9 <- (abs(hilic.partial.B1.9) > 1e-5) * 1
+diag(hilic.adj.B1.9) <- 0
+hilic.adj.B2.9 <- (abs(hilic.partial.B2.9) > 1e-5) * 1
+diag(hilic.adj.B2.9) <- 0
+
+hilic.g.B1.5 <- graph_from_adjacency_matrix(hilic.adj.B1.5, mode = "undirected", diag = FALSE)
+hilic.g.B2.5 <- graph_from_adjacency_matrix(hilic.adj.B2.5, mode = "undirected", diag = FALSE)
+hilic.g.B1.75 <- graph_from_adjacency_matrix(hilic.adj.B1.75, mode = "undirected", diag = FALSE)
+hilic.g.B2.75 <- graph_from_adjacency_matrix(hilic.adj.B2.75, mode = "undirected", diag = FALSE)
+hilic.g.B1.9 <- graph_from_adjacency_matrix(hilic.adj.B1.9, mode = "undirected", diag = FALSE)
+hilic.g.B2.9 <- graph_from_adjacency_matrix(hilic.adj.B2.9, mode = "undirected", diag = FALSE)
+
+hilic.stats.B1.5 <- network_mean_stats(hilic.g.B1.5)
+hilic.stats.B2.5 <- network_mean_stats(hilic.g.B2.5)
+hilic.stats.B1.75 <- network_mean_stats(hilic.g.B1.75)
+hilic.stats.B2.75 <- network_mean_stats(hilic.g.B2.75)
+hilic.stats.B1.9 <- network_mean_stats(hilic.g.B1.9)
+hilic.stats.B2.9 <- network_mean_stats(hilic.g.B2.9)
+
+# Compare
+hilic.stats.comparison.5 <- data.frame(
+  Metric = names(hilic.stats.B1.5),
+  Batch1 = unlist(hilic.stats.B1.5),
+  Batch2 = unlist(hilic.stats.B2.5)
+)
+hilic.stats.comparison.75 <- data.frame(
+  Metric = names(hilic.stats.B1.75),
+  Batch1 = unlist(hilic.stats.B1.75),
+  Batch2 = unlist(hilic.stats.B2.75)
+)
+hilic.stats.comparison.9 <- data.frame(
+  Metric = names(hilic.stats.B1.9),
+  Batch1 = unlist(hilic.stats.B1.9),
+  Batch2 = unlist(hilic.stats.B2.9)
+)
+
+
+# Compare (Metabolite Level)
+hilic.network.stats.5.B1 <- data.frame(Metabolite.B1=hilic.new.ann.B1.sorted$Metabolite.B1,
+                                      HMDB=hilic.new.ann.B1.sorted$HMDB,
+                                   degree.central.B1.rho.0.5=degree(hilic.g.B1.5),
+                                   betweenness.B1.rho.0.5=betweenness(hilic.g.B1.5),
+                                   closeness.B1.rho.0.5=closeness(hilic.g.B1.5)
+                                   )
+hilic.network.stats.5.B2 <- data.frame(Metabolite.B2=hilic.new.ann.B2.sorted$Metabolite.B2,
+                                      HMDB=hilic.new.ann.B2.sorted$HMDB,
+                                   degree.central.B2.rho.0.5=degree(hilic.g.B2.5),
+                                   betweenness.B2.rho.0.5=betweenness(hilic.g.B2.5),
+                                   closeness.B2.rho.0.5=closeness(hilic.g.B2.5)
+                                   )
+hilic.network.stats.75.B1 <- data.frame(Metabolite.B1=hilic.new.ann.B1.sorted$Metabolite.B1,
+                                       HMDB=hilic.new.ann.B1.sorted$HMDB,
+                                   degree.central.B1.rho.0.75=degree(hilic.g.B1.75),
+                                   betweenness.B1.rho.0.75=betweenness(hilic.g.B1.75),
+                                   closeness.B1.rho.0.75=closeness(hilic.g.B1.75)
+                                   )
+hilic.network.stats.75.B2 <- data.frame(Metabolite.B2=hilic.new.ann.B2.sorted$Metabolite.B2,
+                                       HMDB=hilic.new.ann.B2.sorted$HMDB,
+                                   degree.central.B2.rho.0.75=degree(hilic.g.B2.75),
+                                   betweenness.B2.rho.0.75=betweenness(hilic.g.B2.75),
+                                   closeness.B2.rho.0.75=closeness(hilic.g.B2.75)
+                                   )
+hilic.network.stats.9.B1 <- data.frame(Metabolite.B1=hilic.new.ann.B1.sorted$Metabolite.B1,
+                                      HMDB=hilic.new.ann.B1.sorted$HMDB,
+                                   degree.central.B1.rho.0.9=degree(hilic.g.B1.9),
+                                   betweenness.B1.rho.0.9=betweenness(hilic.g.B1.9),
+                                   closeness.B1.rho.0.9=closeness(hilic.g.B1.9)
+                                   )
+hilic.network.stats.9.B2 <- data.frame(Metabolite.B2=hilic.new.ann.B2.sorted$Metabolite.B2,
+                                      HMDB=hilic.new.ann.B2.sorted$HMDB,
+                                   degree.central.B2.rho.0.9=degree(hilic.g.B2.9),
+                                   betweenness.B2.rho.0.9=betweenness(hilic.g.B2.9),
+                                   closeness.B2.rho.0.9=closeness(hilic.g.B2.9)
+                                   )
+
+hilic.network.stats.5 <- inner_join(hilic.network.stats.5.B1,hilic.network.stats.5.B2,by = "HMDB") |>
+  select(HMDB,Metabolite.B1,Metabolite.B2,degree.central.B1.rho.0.5,degree.central.B2.rho.0.5,
+         betweenness.B1.rho.0.5,betweenness.B2.rho.0.5,closeness.B1.rho.0.5,closeness.B2.rho.0.5)
+hilic.network.stats.75 <- inner_join(hilic.network.stats.75.B1,hilic.network.stats.75.B2,by = "HMDB") |>
+  select(HMDB,Metabolite.B1,Metabolite.B2,degree.central.B1.rho.0.75,degree.central.B2.rho.0.75,
+         betweenness.B1.rho.0.75,betweenness.B2.rho.0.75,closeness.B1.rho.0.75,closeness.B2.rho.0.75)
+hilic.network.stats.9 <- inner_join(hilic.network.stats.9.B1,hilic.network.stats.9.B2,by = "HMDB") |>
+  select(HMDB,Metabolite.B1,Metabolite.B2,degree.central.B1.rho.0.9,degree.central.B2.rho.0.9,
+         betweenness.B1.rho.0.9,betweenness.B2.rho.0.9,closeness.B1.rho.0.9,closeness.B2.rho.0.9)
+
+hilic.network.stats.5[is.na(hilic.network.stats.5)] <- 0
+hilic.network.stats.75[is.na(hilic.network.stats.75)] <- 0
+hilic.network.stats.9[is.na(hilic.network.stats.9)] <- 0
+
+```
+
+
+
+```{r hilic_plots, echo=FALSE, fig.width=6, fig.height=4}
+
+
+hilic.stats.comparison.num.edges <- data.frame(Batch=rep(c("Batch1","Batch2"),each=3),
+                                              rho=rep(c(0.5,0.75,0.9),times=2),
+                                              num_edges=rbind(hilic.stats.comparison.5["num_edges","Batch1"],
+                                                              hilic.stats.comparison.75["num_edges","Batch1"],
+                                                              hilic.stats.comparison.9["num_edges","Batch1"],
+                                                              hilic.stats.comparison.5["num_edges","Batch2"],
+                                                              hilic.stats.comparison.75["num_edges","Batch2"],
+                                                              hilic.stats.comparison.9["num_edges","Batch2"])
+)
+hilic.stats.comparison.density <- data.frame(Batch=rep(c("Batch1","Batch2"),each=3),
+                                              rho=rep(c(0.5,0.75,0.9),times=2),
+                                              density=rbind(hilic.stats.comparison.5["density","Batch1"],
+                                                              hilic.stats.comparison.75["density","Batch1"],
+                                                              hilic.stats.comparison.9["density","Batch1"],
+                                                              hilic.stats.comparison.5["density","Batch2"],
+                                                              hilic.stats.comparison.75["density","Batch2"],
+                                                              hilic.stats.comparison.9["density","Batch2"])
+)
+hilic.stats.comparison.clust.coeff <- data.frame(Batch=rep(c("Batch1","Batch2"),each=3),
+                                              rho=rep(c(0.5,0.75,0.9),times=2),
+                                              clustering_coeff=rbind(hilic.stats.comparison.5["clustering_coeff","Batch1"],
+                                                              hilic.stats.comparison.75["clustering_coeff","Batch1"],
+                                                              hilic.stats.comparison.9["clustering_coeff","Batch1"],
+                                                              hilic.stats.comparison.5["clustering_coeff","Batch2"],
+                                                              hilic.stats.comparison.75["clustering_coeff","Batch2"],
+                                                              hilic.stats.comparison.9["clustering_coeff","Batch2"])
+)
+hilic.stats.comparison.degree.cent <- data.frame(Batch=rep(c("Batch1","Batch2"),each=3),
+                                              rho=rep(c(0.5,0.75,0.9),times=2),
+                                              degree_centrality=rbind(hilic.stats.comparison.5["degree_centrality","Batch1"],
+                                                              hilic.stats.comparison.75["degree_centrality","Batch1"],
+                                                              hilic.stats.comparison.9["degree_centrality","Batch1"],
+                                                              hilic.stats.comparison.5["degree_centrality","Batch2"],
+                                                              hilic.stats.comparison.75["degree_centrality","Batch2"],
+                                                              hilic.stats.comparison.9["degree_centrality","Batch2"])
+)
+hilic.stats.comparison.between.cent <- data.frame(Batch=rep(c("Batch1","Batch2"),each=3),
+                                              rho=rep(c(0.5,0.75,0.9),times=2),
+                                              betweenness_centrality=rbind(hilic.stats.comparison.5["betweenness_centrality","Batch1"],
+                                                              hilic.stats.comparison.75["betweenness_centrality","Batch1"],
+                                                              hilic.stats.comparison.9["betweenness_centrality","Batch1"],
+                                                              hilic.stats.comparison.5["betweenness_centrality","Batch2"],
+                                                              hilic.stats.comparison.75["betweenness_centrality","Batch2"],
+                                                              hilic.stats.comparison.9["betweenness_centrality","Batch2"])
+)
+
+ggplot(hilic.stats.comparison.num.edges,aes(x=rho,y=num_edges,color=Batch)) +
+  geom_point(size=2) +
+  geom_line() +
+  labs(y = "Number of Edges") +
+  ggtitle("HILIC: Batch Comparison - Number of Edges") +
+  theme_minimal()
+ggplot(hilic.stats.comparison.density,aes(x=rho,y=density,color=Batch)) +
+  geom_point(size=2) +
+  geom_line() +
+  labs(y = "Density") +
+  ggtitle("HILIC: Batch Comparison - Density") +
+  theme_minimal()
+ggplot(hilic.stats.comparison.clust.coeff,aes(x=rho,y=clustering_coeff,color=Batch)) +
+  geom_point(size=2) +
+  geom_line() +
+  labs(y = "Clustering Coefficient") +
+  ggtitle("HILIC: Batch Comparison - Clustering Coefficient") +
+  theme_minimal()
+ggplot(hilic.stats.comparison.degree.cent,aes(x=rho,y=degree_centrality,color=Batch)) +
+  geom_point(size=2) +
+  geom_line() +
+  labs(y = "Degree Centrality") +
+  ggtitle("HILIC: Batch Comparison - Degree Centrality") +
+  theme_minimal()
+ggplot(hilic.stats.comparison.between.cent,aes(x=rho,y=betweenness_centrality,color=Batch)) +
+  geom_point(size=2) +
+  geom_line() +
+  labs(y = "Betweenness Centrality") +
+  ggtitle("HILIC: Batch Comparison - Betweenness Centrality") +
+  theme_minimal()
+
+
+```
+
+
+
+```{r hilic_heatmap, echo=FALSE, fig.width=10, fig.height=10}
+
+hilic.network.stats.num.edges <- data.frame(
+  rho.0.5.B1 = hilic.network.stats.5[,"degree.central.B1.rho.0.5"],
+  rho.0.75.B1 = hilic.network.stats.75[,"degree.central.B1.rho.0.75"],
+  rho.0.9.B1 = hilic.network.stats.9[,"degree.central.B1.rho.0.9"],
+  rho.0.5.B2 = hilic.network.stats.5[,"degree.central.B2.rho.0.5"],
+  rho.0.75.B2 = hilic.network.stats.75[,"degree.central.B2.rho.0.75"],
+  rho.0.9.B2 = hilic.network.stats.9[,"degree.central.B2.rho.0.9"]
+)
+rownames(hilic.network.stats.num.edges) <- hilic.network.stats.5$HMDB
+
+hilic.network.stats.between <- data.frame(
+  rho.0.5.B1 = hilic.network.stats.5[,"betweenness.B1.rho.0.5"],
+  rho.0.75.B1 = hilic.network.stats.75[,"betweenness.B1.rho.0.75"],
+  rho.0.9.B1 = hilic.network.stats.9[,"betweenness.B1.rho.0.9"],
+  rho.0.5.B2 = hilic.network.stats.5[,"betweenness.B2.rho.0.5"],
+  rho.0.75.B2 = hilic.network.stats.75[,"betweenness.B2.rho.0.75"],
+  rho.0.9.B2 = hilic.network.stats.9[,"betweenness.B2.rho.0.9"]
+)
+rownames(hilic.network.stats.between) <- hilic.network.stats.5$HMDB
+
+hilic.network.stats.close <- data.frame(
+  rho.0.5.B1 = hilic.network.stats.5[,"closeness.B1.rho.0.5"],
+  rho.0.75.B1 = hilic.network.stats.75[,"closeness.B1.rho.0.75"],
+  rho.0.9.B1 = hilic.network.stats.9[,"closeness.B1.rho.0.9"],
+  rho.0.5.B2 = hilic.network.stats.5[,"closeness.B2.rho.0.5"],
+  rho.0.75.B2 = hilic.network.stats.75[,"closeness.B2.rho.0.75"],
+  rho.0.9.B2 = hilic.network.stats.9[,"closeness.B2.rho.0.9"]
+)
+rownames(hilic.network.stats.close) <- hilic.network.stats.5$HMDB
+
+Batches_hilic <- c(rep("B1",3),rep("B2",3))
+rho_str_hilic <- rep(c(rho1,rho2,rho3),times=2)
+col_anno_hilic <- data.frame(Batch = Batches_hilic, Rho = rho_str_hilic)
+ha_hilic <- HeatmapAnnotation(df = col_anno_hilic,
+                        col = list(Batch = c("B1" = "gray", "B2" = "orange"),
+                                   Rho = c("0.5" = "purple", "0.75" = "brown", "0.9" = "green")),
+                        show_legend = TRUE)
+
+rownames(col_anno_hilic) <- colnames(hilic.network.stats.num.edges)
+rownames(col_anno_hilic) <- colnames(hilic.network.stats.between)
+rownames(col_anno_hilic) <- colnames(hilic.network.stats.close)
+
+Heatmap(as.matrix(scale(hilic.network.stats.num.edges)),
+        top_annotation = ha_hilic,
+        column_split = Batches_hilic,
+        column_title = "HILIC: Number of Edges (Scaled)",
+        column_title_gp = gpar(fontsize = 15),
+        row_names_gp = gpar(fontsize = 10),
+        cluster_columns = FALSE,
+        cluster_rows = TRUE,
+        show_column_names = FALSE,
+        show_row_dend = FALSE,
+        show_column_dend = FALSE,
+        heatmap_legend_param = list(title = "Score")
+        )
+
+Heatmap(as.matrix(scale(hilic.network.stats.between)),
+        top_annotation = ha_hilic,
+        column_split = Batches_hilic,
+        column_title = "HILIC: Betweenness (Scaled)",
+        column_title_gp = gpar(fontsize = 15),
+        row_names_gp = gpar(fontsize = 10),
+        cluster_columns = FALSE,
+        cluster_rows = TRUE,
+        show_column_names = FALSE,
+        show_row_dend = FALSE,
+        show_column_dend = FALSE,
+        heatmap_legend_param = list(title = "Score")
+        )
+
+Heatmap(as.matrix(scale(hilic.network.stats.close)),
+        top_annotation = ha_hilic,
+        column_split = Batches_hilic,
+        column_title = "HILIC: Closeness (Scaled)",
+        column_title_gp = gpar(fontsize = 15),
+        row_names_gp = gpar(fontsize = 10),
+        cluster_columns = FALSE,
+        cluster_rows = TRUE,
+        show_column_names = FALSE,
+        show_row_dend = FALSE,
+        show_column_dend = FALSE,
+        heatmap_legend_param = list(title = "Score")
+        )
+  
+
+
+```
+
+
+```{r hilic_remove, echo=FALSE}
+remove(hilic.network.stats.5.B1,hilic.network.stats.5.B2,hilic.network.stats.75.B1,hilic.network.stats.75.B2,
+       hilic.network.stats.9.B1,hilic.network.stats.9.B2)
+
+
+```
+
+
+
+## Networks for each protein for Proteomic Data for Batch 1 and Batch 2
+
+
+
+```{r proteinnetwork, echo=FALSE, fig.width=8, fig.height=6}
+
+rho1p <- 0.1
+rho2p <- 0.25
+rho3p <- 0.4
+
+#network analysis of icms data for both batches
+
+protein.df.B1<- protein.data.B1 |> filter(group != "Normal" & group != "Normal.Adj") |> select(-sampleID,-group,-Pair)
+protein.df.B2<- protein.data.B2 |> select(-sampleID,-group)
+
+ind.protein.B1.target<-colnames(protein.df.B1) %in% targets.proteins$Gene
+ind.protein.B2.target<-colnames(protein.df.B2) %in% targets.proteins$Gene
+
+protein.df.B1<-protein.df.B1[,ind.protein.B1.target]
+protein.df.B2<-protein.df.B2[,ind.protein.B2.target]
+
+protein.new.ann.B1 <- data.frame(Metabolite=colnames(protein.df.B1),New.Name=paste0(rep("P",dim(protein.df.B1)[2]),1:dim(protein.df.B1)[2]))
+protein.new.ann.B2 <- data.frame(Metabolite=colnames(protein.df.B2),New.Name=paste0(rep("P",dim(protein.df.B2)[2]),1:dim(protein.df.B2)[2]))
+
+protein.df.B1.s<-var(protein.df.B1)
+protein.df.B2.s<-var(protein.df.B2)
+
+protein.df.B1.a.1<-glasso(protein.df.B1.s, rho=rho1p)
+protein.df.B2.a.1<-glasso(protein.df.B2.s, rho=rho1p)
+protein.df.B1.a.25<-glasso(protein.df.B1.s, rho=rho2p)
+protein.df.B2.a.25<-glasso(protein.df.B2.s, rho=rho2p)
+protein.df.B1.a.4<-glasso(protein.df.B1.s, rho=rho3p)
+protein.df.B2.a.4<-glasso(protein.df.B2.s, rho=rho3p)
+
+# Convert precision matrix to partial correlations
+protein.partial.B1.1 <- partial.cor(protein.df.B1.a.1$wi)
+protein.partial.B2.1 <- partial.cor(protein.df.B2.a.1$wi)
+protein.partial.B1.25 <- partial.cor(protein.df.B1.a.25$wi)
+protein.partial.B2.25 <- partial.cor(protein.df.B2.a.25$wi)
+protein.partial.B1.4 <- partial.cor(protein.df.B1.a.4$wi)
+protein.partial.B2.4 <- partial.cor(protein.df.B2.a.4$wi)
+
+# Threshold partial correlations
+thresh <- 1e-5  # Set your desired threshold
+protein.partial.B1.1[abs(protein.partial.B1.1) < thresh] <- 0
+protein.partial.B2.1[abs(protein.partial.B2.1) < thresh] <- 0
+protein.partial.B1.25[abs(protein.partial.B1.25) < thresh] <- 0
+protein.partial.B2.25[abs(protein.partial.B2.25) < thresh] <- 0
+protein.partial.B1.4[abs(protein.partial.B1.4) < thresh] <- 0
+protein.partial.B2.4[abs(protein.partial.B2.4) < thresh] <- 0
+
+diag(protein.partial.B1.1) <- 0
+diag(protein.partial.B2.1) <- 0
+diag(protein.partial.B1.25) <- 0
+diag(protein.partial.B2.25) <- 0
+diag(protein.partial.B1.4) <- 0
+diag(protein.partial.B2.4) <- 0
+
+
+# Identify and remove nodes with no remaining edges
+protein.partial.B1.1.connected <- apply(protein.partial.B1.1, 1, function(x) any(x != 0))
+protein.partial.B1.1.filtered <- protein.partial.B1.1[protein.partial.B1.1.connected, protein.partial.B1.1.connected]
+protein.partial.B1.1.labels.filtered <- protein.new.ann.B1$New.Name[protein.partial.B1.1.connected]
+protein.partial.B2.1.connected <- apply(protein.partial.B2.1, 1, function(x) any(x != 0))
+protein.partial.B2.1.filtered <- protein.partial.B2.1[protein.partial.B2.1.connected, protein.partial.B2.1.connected]
+protein.partial.B2.1.labels.filtered <- protein.new.ann.B2$New.Name[protein.partial.B2.1.connected]
+
+protein.partial.B1.25.connected <- apply(protein.partial.B1.25, 1, function(x) any(x != 0))
+protein.partial.B1.25.filtered <- protein.partial.B1.25[protein.partial.B1.25.connected, protein.partial.B1.25.connected]
+protein.partial.B1.25.labels.filtered <- protein.new.ann.B1$New.Name[protein.partial.B1.25.connected]
+protein.partial.B2.25.connected <- apply(protein.partial.B2.25, 1, function(x) any(x != 0))
+protein.partial.B2.25.filtered <- protein.partial.B2.25[protein.partial.B2.25.connected, protein.partial.B2.25.connected]
+protein.partial.B2.25.labels.filtered <- protein.new.ann.B2$New.Name[protein.partial.B2.25.connected]
+
+protein.partial.B1.4.connected <- apply(protein.partial.B1.4, 1, function(x) any(x != 0))
+protein.partial.B1.4.filtered <- protein.partial.B1.4[protein.partial.B1.4.connected, protein.partial.B1.4.connected]
+protein.partial.B1.4.labels.filtered <- protein.new.ann.B1$New.Name[protein.partial.B1.4.connected]
+protein.partial.B2.4.connected <- apply(protein.partial.B2.4, 1, function(x) any(x != 0))
+protein.partial.B2.4.filtered <- protein.partial.B2.4[protein.partial.B2.4.connected, protein.partial.B2.4.connected]
+protein.partial.B2.4.labels.filtered <- protein.new.ann.B2$New.Name[protein.partial.B2.4.connected]
+
+
+# rho=0.1
+layout(matrix(c(1, 2, 3), nrow = 1), widths = c(0.7, 0.7, 0.5))
+
+qgraph(protein.partial.B1.1.filtered, labels = protein.partial.B1.1.labels.filtered, arrows=FALSE, diag=FALSE, label.cex=1.25, vsize=10,
+       layout="spring", title = paste0("Proteomic data (Batch 1), FDR<0.1, glasso rho=",rho1p),
+       nodeNames = protein.new.ann.B1$Metabolite, legend=FALSE)
+qgraph(protein.partial.B2.1.filtered, labels = protein.partial.B2.1.labels.filtered, arrows=FALSE, diag=FALSE, label.cex=1.25, vsize=10,
+       layout="spring", title = paste0("Proteomic data (Batch 2), FDR<0.1, glasso rho=",rho1p),
+       nodeNames = protein.new.ann.B2$Metabolite, legend=FALSE)
+plot.new()
+legend("left", legend = paste0(protein.new.ann.B1$New.Name,": ", protein.new.ann.B2$Metabolite), cex = 0.7, bty = "n")
+
+# rho=0.25
+layout(matrix(c(1, 2, 3), nrow = 1), widths = c(0.7, 0.7, 0.5))
+
+qgraph(protein.partial.B1.25.filtered, labels = protein.partial.B1.25.labels.filtered, arrows=FALSE, diag=FALSE, label.cex=1.25, vsize=10,
+       layout="spring", title = paste0("Proteomic data (Batch 1), FDR<0.1, glasso rho=",rho2p),
+       nodeNames = protein.new.ann.B1$Metabolite, legend=FALSE)
+qgraph(protein.partial.B2.25.filtered, labels = protein.partial.B2.25.labels.filtered, arrows=FALSE, diag=FALSE, label.cex=1.25, vsize=10,
+       layout="spring", title = paste0("Proteomic data (Batch 2), FDR<0.1, glasso rho=",rho2p),
+       nodeNames = protein.new.ann.B2$Metabolite, legend=FALSE)
+plot.new()
+legend("left", legend = paste0(protein.new.ann.B1$New.Name,": ", protein.new.ann.B2$Metabolite), cex = 0.7, bty = "n")
+
+# rho=0.4
+layout(matrix(c(1, 2, 3), nrow = 1), widths = c(0.7, 0.7, 0.5))
+
+qgraph(protein.partial.B1.4.filtered, labels = protein.partial.B1.4.labels.filtered, arrows=FALSE, diag=FALSE, label.cex=1.25, vsize=10,
+       layout="spring", title = paste0("Proteomic data (Batch 1), FDR<0.1, glasso rho=",rho3p),
+       nodeNames = protein.new.ann.B1$Metabolite, legend=FALSE)
+qgraph(protein.partial.B2.4.filtered, labels = protein.partial.B2.4.labels.filtered, arrows=FALSE, diag=FALSE, label.cex=1.25, vsize=10,
+       layout="spring", title = paste0("Proteomic data (Batch 2), FDR<0.1, glasso rho=",rho3p),
+       nodeNames = protein.new.ann.B2$Metabolite, legend=FALSE)
+plot.new()
+legend("left", legend = paste0(protein.new.ann.B1$New.Name,": ", protein.new.ann.B2$Metabolite), cex = 0.7, bty = "n")
+
+# protein.prec.B1.1 <- protein.df.B1.a.1$wi
+# protein.prec.B2.1 <- protein.df.B2.a.1$wi
+# protein.prec.B1.25 <- protein.df.B1.a.25$wi
+# protein.prec.B2.25 <- protein.df.B2.a.25$wi
+# protein.prec.B1.4 <- protein.df.B1.a.4$wi
+# protein.prec.B2.4 <- protein.df.B2.a.4$wi
+
+# Convert to adjacency matrices (non-zero off-diagonal entries indicate edges)
+protein.adj.B1.1 <- (abs(protein.partial.B1.1) > 1e-5) * 1
+diag(protein.adj.B1.1) <- 0
+protein.adj.B2.1 <- (abs(protein.partial.B2.1) > 1e-5) * 1
+diag(protein.adj.B2.1) <- 0
+protein.adj.B1.25 <- (abs(protein.partial.B1.25) > 1e-5) * 1
+diag(protein.adj.B1.25) <- 0
+protein.adj.B2.25 <- (abs(protein.partial.B2.25) > 1e-5) * 1
+diag(protein.adj.B2.25) <- 0
+protein.adj.B1.4 <- (abs(protein.partial.B1.4) > 1e-5) * 1
+diag(protein.adj.B1.4) <- 0
+protein.adj.B2.4 <- (abs(protein.partial.B2.4) > 1e-5) * 1
+diag(protein.adj.B2.4) <- 0
+
+protein.g.B1.1 <- graph_from_adjacency_matrix(protein.adj.B1.1, mode = "undirected", diag = FALSE)
+protein.g.B2.1 <- graph_from_adjacency_matrix(protein.adj.B2.1, mode = "undirected", diag = FALSE)
+protein.g.B1.25 <- graph_from_adjacency_matrix(protein.adj.B1.25, mode = "undirected", diag = FALSE)
+protein.g.B2.25 <- graph_from_adjacency_matrix(protein.adj.B2.25, mode = "undirected", diag = FALSE)
+protein.g.B1.4 <- graph_from_adjacency_matrix(protein.adj.B1.4, mode = "undirected", diag = FALSE)
+protein.g.B2.4 <- graph_from_adjacency_matrix(protein.adj.B2.4, mode = "undirected", diag = FALSE)
+
+protein.stats.B1.1 <- network_mean_stats(protein.g.B1.1)
+protein.stats.B2.1 <- network_mean_stats(protein.g.B2.1)
+protein.stats.B1.25 <- network_mean_stats(protein.g.B1.25)
+protein.stats.B2.25 <- network_mean_stats(protein.g.B2.25)
+protein.stats.B1.4 <- network_mean_stats(protein.g.B1.4)
+protein.stats.B2.4 <- network_mean_stats(protein.g.B2.4)
+
+# Compare
+protein.stats.comparison.1 <- data.frame(
+  Metric = names(protein.stats.B1.1),
+  Batch1 = unlist(protein.stats.B1.1),
+  Batch2 = unlist(protein.stats.B2.1)
+)
+protein.stats.comparison.25 <- data.frame(
+  Metric = names(protein.stats.B1.25),
+  Batch1 = unlist(protein.stats.B1.25),
+  Batch2 = unlist(protein.stats.B2.25)
+)
+protein.stats.comparison.4 <- data.frame(
+  Metric = names(protein.stats.B1.4),
+  Batch1 = unlist(protein.stats.B1.4),
+  Batch2 = unlist(protein.stats.B2.4)
+)
+
+
+# Compare (Protein Level)
+protein.network.stats.1.B1 <- data.frame(Gene.B1=colnames(protein.df.B1),
+                                   degree.central.B1.rho.0.1=degree(protein.g.B1.1),
+                                   betweenness.B1.rho.0.1=betweenness(protein.g.B1.1),
+                                   closeness.B1.rho.0.1=closeness(protein.g.B1.1)
+                                   )
+protein.network.stats.1.B2 <- data.frame(Gene.B2=colnames(protein.df.B2),
+                                   degree.central.B2.rho.0.1=degree(protein.g.B2.1),
+                                   betweenness.B2.rho.0.1=betweenness(protein.g.B2.1),
+                                   closeness.B2.rho.0.1=closeness(protein.g.B2.1)
+                                   )
+protein.network.stats.25.B1 <- data.frame(Gene.B1=colnames(protein.df.B1),
+                                   degree.central.B1.rho.0.25=degree(protein.g.B1.25),
+                                   betweenness.B1.rho.0.25=betweenness(protein.g.B1.25),
+                                   closeness.B1.rho.0.25=closeness(protein.g.B1.25)
+                                   )
+protein.network.stats.25.B2 <- data.frame(Gene.B2=colnames(protein.df.B2),
+                                   degree.central.B2.rho.0.25=degree(protein.g.B2.25),
+                                   betweenness.B2.rho.0.25=betweenness(protein.g.B2.25),
+                                   closeness.B2.rho.0.25=closeness(protein.g.B2.25)
+                                   )
+protein.network.stats.4.B1 <- data.frame(Gene.B1=colnames(protein.df.B1),
+                                   degree.central.B1.rho.0.4=degree(protein.g.B1.4),
+                                   betweenness.B1.rho.0.4=betweenness(protein.g.B1.4),
+                                   closeness.B1.rho.0.4=closeness(protein.g.B1.4)
+                                   )
+protein.network.stats.4.B2 <- data.frame(Gene.B2=colnames(protein.df.B2),
+                                   degree.central.B2.rho.0.4=degree(protein.g.B2.4),
+                                   betweenness.B2.rho.0.4=betweenness(protein.g.B2.4),
+                                   closeness.B2.rho.0.4=closeness(protein.g.B2.4)
+                                   )
+
+
+protein.network.stats.1 <- inner_join(protein.network.stats.1.B1,protein.network.stats.1.B2,by=c("Gene.B1" = "Gene.B2")) |>
+  select(Gene=Gene.B1,degree.central.B1.rho.0.1,degree.central.B2.rho.0.1,betweenness.B1.rho.0.1,betweenness.B2.rho.0.1,
+         closeness.B1.rho.0.1,closeness.B2.rho.0.1)
+protein.network.stats.25 <- inner_join(protein.network.stats.25.B1,protein.network.stats.25.B2,by=c("Gene.B1" = "Gene.B2")) |>
+  select(Gene=Gene.B1,degree.central.B1.rho.0.25,degree.central.B2.rho.0.25,betweenness.B1.rho.0.25,betweenness.B2.rho.0.25,
+         closeness.B1.rho.0.25,closeness.B2.rho.0.25)
+protein.network.stats.4 <- inner_join(protein.network.stats.4.B1,protein.network.stats.4.B2,by=c("Gene.B1" = "Gene.B2")) |>
+  select(Gene=Gene.B1,degree.central.B1.rho.0.4,degree.central.B2.rho.0.4,betweenness.B1.rho.0.4,betweenness.B2.rho.0.4,
+         closeness.B1.rho.0.4,closeness.B2.rho.0.4)
+
+protein.network.stats.1[is.na(protein.network.stats.1)] <- 0
+protein.network.stats.25[is.na(protein.network.stats.25)] <- 0
+protein.network.stats.4[is.na(protein.network.stats.4)] <- 0
+
+```
+
+
+```{r protein_plots, echo=FALSE, fig.width=6, fig.height=4}
+
+
+protein.stats.comparison.num.edges <- data.frame(Batch=rep(c("Batch1","Batch2"),each=3),
+                                              rho=rep(c(0.1,0.25,0.4),times=2),
+                                              num_edges=rbind(protein.stats.comparison.1["num_edges","Batch1"],
+                                                              protein.stats.comparison.25["num_edges","Batch1"],
+                                                              protein.stats.comparison.4["num_edges","Batch1"],
+                                                              protein.stats.comparison.1["num_edges","Batch2"],
+                                                              protein.stats.comparison.25["num_edges","Batch2"],
+                                                              protein.stats.comparison.4["num_edges","Batch2"])
+)
+protein.stats.comparison.density <- data.frame(Batch=rep(c("Batch1","Batch2"),each=3),
+                                              rho=rep(c(0.1,0.25,0.4),times=2),
+                                              density=rbind(protein.stats.comparison.1["density","Batch1"],
+                                                              protein.stats.comparison.25["density","Batch1"],
+                                                              protein.stats.comparison.4["density","Batch1"],
+                                                              protein.stats.comparison.1["density","Batch2"],
+                                                              protein.stats.comparison.25["density","Batch2"],
+                                                              protein.stats.comparison.4["density","Batch2"])
+)
+protein.stats.comparison.clust.coeff <- data.frame(Batch=rep(c("Batch1","Batch2"),each=3),
+                                              rho=rep(c(0.1,0.25,0.4),times=2),
+                                              clustering_coeff=rbind(protein.stats.comparison.1["clustering_coeff","Batch1"],
+                                                              protein.stats.comparison.25["clustering_coeff","Batch1"],
+                                                              protein.stats.comparison.4["clustering_coeff","Batch1"],
+                                                              protein.stats.comparison.1["clustering_coeff","Batch2"],
+                                                              protein.stats.comparison.25["clustering_coeff","Batch2"],
+                                                              protein.stats.comparison.4["clustering_coeff","Batch2"])
+)
+protein.stats.comparison.degree.cent <- data.frame(Batch=rep(c("Batch1","Batch2"),each=3),
+                                              rho=rep(c(0.1,0.25,0.4),times=2),
+                                              degree_centrality=rbind(protein.stats.comparison.1["degree_centrality","Batch1"],
+                                                              protein.stats.comparison.25["degree_centrality","Batch1"],
+                                                              protein.stats.comparison.4["degree_centrality","Batch1"],
+                                                              protein.stats.comparison.1["degree_centrality","Batch2"],
+                                                              protein.stats.comparison.25["degree_centrality","Batch2"],
+                                                              protein.stats.comparison.4["degree_centrality","Batch2"])
+)
+protein.stats.comparison.between.cent <- data.frame(Batch=rep(c("Batch1","Batch2"),each=3),
+                                              rho=rep(c(0.1,0.25,0.4),times=2),
+                                              betweenness_centrality=rbind(protein.stats.comparison.1["betweenness_centrality","Batch1"],
+                                                              protein.stats.comparison.25["betweenness_centrality","Batch1"],
+                                                              protein.stats.comparison.4["betweenness_centrality","Batch1"],
+                                                              protein.stats.comparison.1["betweenness_centrality","Batch2"],
+                                                              protein.stats.comparison.25["betweenness_centrality","Batch2"],
+                                                              protein.stats.comparison.4["betweenness_centrality","Batch2"])
+)
+
+ggplot(protein.stats.comparison.num.edges,aes(x=rho,y=num_edges,color=Batch)) +
+  geom_point(size=2) +
+  geom_line() +
+  labs(y = "Number of Edges") +
+  ggtitle("Protein: Batch Comparison - Number of Edges") +
+  theme_minimal()
+ggplot(protein.stats.comparison.density,aes(x=rho,y=density,color=Batch)) +
+  geom_point(size=2) +
+  geom_line() +
+  labs(y = "Density") +
+  ggtitle("Protein: Batch Comparison - Density") +
+  theme_minimal()
+ggplot(protein.stats.comparison.clust.coeff,aes(x=rho,y=clustering_coeff,color=Batch)) +
+  geom_point(size=2) +
+  geom_line() +
+  labs(y = "Clustering Coefficient") +
+  ggtitle("Protein: Batch Comparison - Clustering Coefficient") +
+  theme_minimal()
+ggplot(protein.stats.comparison.degree.cent,aes(x=rho,y=degree_centrality,color=Batch)) +
+  geom_point(size=2) +
+  geom_line() +
+  labs(y = "Degree Centrality") +
+  ggtitle("Protein: Batch Comparison - Degree Centrality") +
+  theme_minimal()
+ggplot(protein.stats.comparison.between.cent,aes(x=rho,y=betweenness_centrality,color=Batch)) +
+  geom_point(size=2) +
+  geom_line() +
+  labs(y = "Betweenness Centrality") +
+  ggtitle("Protein: Batch Comparison - Betweenness Centrality") +
+  theme_minimal()
+
+
+```
+
+
+```{r protein_heatmap, echo=FALSE, fig.width=10, fig.height=4}
+
+protein.network.stats.num.edges <- data.frame(
+  rho.0.1.B1 = protein.network.stats.1[,"degree.central.B1.rho.0.1"],
+  rho.0.25.B1 = protein.network.stats.25[,"degree.central.B1.rho.0.25"],
+  rho.0.4.B1 = protein.network.stats.4[,"degree.central.B1.rho.0.4"],
+  rho.0.1.B2 = protein.network.stats.1[,"degree.central.B2.rho.0.1"],
+  rho.0.25.B2 = protein.network.stats.25[,"degree.central.B2.rho.0.25"],
+  rho.0.4.B2 = protein.network.stats.4[,"degree.central.B2.rho.0.4"]
+)
+rownames(protein.network.stats.num.edges) <- protein.network.stats.1$Gene
+
+protein.network.stats.between <- data.frame(
+  rho.0.1.B1 = protein.network.stats.1[,"betweenness.B1.rho.0.1"],
+  rho.0.25.B1 = protein.network.stats.25[,"betweenness.B1.rho.0.25"],
+  rho.0.4.B1 = protein.network.stats.4[,"betweenness.B1.rho.0.4"],
+  rho.0.1.B2 = protein.network.stats.1[,"betweenness.B2.rho.0.1"],
+  rho.0.25.B2 = protein.network.stats.25[,"betweenness.B2.rho.0.25"],
+  rho.0.4.B2 = protein.network.stats.4[,"betweenness.B2.rho.0.4"]
+)
+rownames(protein.network.stats.between) <- protein.network.stats.1$Gene
+
+protein.network.stats.close <- data.frame(
+  rho.0.1.B1 = protein.network.stats.1[,"closeness.B1.rho.0.1"],
+  rho.0.25.B1 = protein.network.stats.25[,"closeness.B1.rho.0.25"],
+  rho.0.4.B1 = protein.network.stats.4[,"closeness.B1.rho.0.4"],
+  rho.0.1.B2 = protein.network.stats.1[,"closeness.B2.rho.0.1"],
+  rho.0.25.B2 = protein.network.stats.25[,"closeness.B2.rho.0.25"],
+  rho.0.4.B2 = protein.network.stats.4[,"closeness.B2.rho.0.4"]
+)
+rownames(protein.network.stats.close) <- protein.network.stats.1$Gene
+
+Batches_protein <- c(rep("B1",3),rep("B2",3))
+rho_str_protein <- rep(c(rho1p,rho2p,rho3p),times=2)
+col_anno_protein <- data.frame(Batch = Batches_protein, Rho = rho_str_protein)
+ha_protein <- HeatmapAnnotation(df = col_anno_protein,
+                        col = list(Batch = c("B1" = "gray", "B2" = "orange"),
+                                   Rho = c("0.1" = "purple", "0.25" = "brown", "0.4" = "green")),
+                        show_legend = TRUE)
+
+rownames(col_anno_protein) <- colnames(protein.network.stats.num.edges)
+rownames(col_anno_protein) <- colnames(protein.network.stats.between)
+rownames(col_anno_protein) <- colnames(protein.network.stats.close)
+
+Heatmap(as.matrix(scale(protein.network.stats.num.edges)),
+        top_annotation = ha_protein,
+        column_split = Batches_protein,
+        column_title = "Protein: Number of Edges (Scaled)",
+        column_title_gp = gpar(fontsize = 15),
+        row_names_gp = gpar(fontsize = 10),
+        cluster_columns = FALSE,
+        cluster_rows = TRUE,
+        show_column_names = FALSE,
+        show_row_dend = FALSE,
+        show_column_dend = FALSE,
+        heatmap_legend_param = list(title = "Score")
+        )
+
+Heatmap(as.matrix(scale(protein.network.stats.between)),
+        top_annotation = ha_protein,
+        column_split = Batches_protein,
+        column_title = "Protein: Betweenness (Scaled)",
+        column_title_gp = gpar(fontsize = 15),
+        row_names_gp = gpar(fontsize = 10),
+        cluster_columns = FALSE,
+        cluster_rows = TRUE,
+        show_column_names = FALSE,
+        show_row_dend = FALSE,
+        show_column_dend = FALSE,
+        heatmap_legend_param = list(title = "Score")
+        )
+
+Heatmap(as.matrix(scale(protein.network.stats.close)),
+        top_annotation = ha_protein,
+        column_split = Batches_protein,
+        column_title = "Protein: Closeness (Scaled)",
+        column_title_gp = gpar(fontsize = 15),
+        row_names_gp = gpar(fontsize = 10),
+        cluster_columns = FALSE,
+        cluster_rows = TRUE,
+        show_column_names = FALSE,
+        show_row_dend = FALSE,
+        show_column_dend = FALSE,
+        heatmap_legend_param = list(title = "Score")
+        )
+
+```
+
+
+```{r protein_remove,echo=FALSE}
+
+remove(protein.network.stats.1.B1,protein.network.stats.1.B2,protein.network.stats.25.B1,protein.network.stats.25.B2,
+       protein.network.stats.4.B1,protein.network.stats.4.B2)
+
+```
+
+
+## Networks for each protein for Phosphoproteomic Data for Batch 1 and Batch 2
+
+```{r pproteinnetwork, echo=FALSE, fig.width=8, fig.height=6}
+
+#network analysis of phosphoprotein together
+
+
+n.pprotein.B1<-dim(annonation.pprotein.B1)[1]
+new.ann.B1 <- paste0(annonation.pprotein.B1$`Master Protein Accessions`,".",annonation.pprotein.B1$`Gene Symbol`,".",
+                  annonation.pprotein.B1$`Annotated Sequence`,".",annonation.pprotein.B1$Modifications)
+for(j in 1:dim(annonation.pprotein.B1)[1]){
+  if(is.na(annonation.pprotein.B1$Modifications[j])){
+    new.ann.B1[j] <- substr(new.ann.B1[j], 1, nchar(new.ann.B1[j]) - 3)
+  }
+}
+colnames(pprotein.data.B1)[2:(n.pprotein.B1+1)] <- new.ann.B1
+
+n.pprotein.B2<-dim(annonation.pprotein.B2)[1]
+new.ann.B2 <- paste0(annonation.pprotein.B2$`Master Protein Accessions`,".",annonation.pprotein.B2$`Gene Symbol`,".",
+                     annonation.pprotein.B2$`Annotated Sequence`,".",annonation.pprotein.B2$Modifications)
+for(j in 1:dim(annonation.pprotein.B2)[1]){
+  if(is.na(annonation.pprotein.B2$Modifications[j])){
+    new.ann.B2[j] <- substr(new.ann.B2[j], 1, nchar(new.ann.B2[j]) - 3)
+  }
+}
+colnames(pprotein.data.B2)[1:n.pprotein.B2] <- new.ann.B2
+
+pprotein.df.B1<- pprotein.data.B1 |> filter(group != "Normal" & group != "Normal.Adj") |> select(-sampleID,-group,-Pair)
+pprotein.df.B2<- pprotein.data.B2 |> select(-sampleID,-group)
+
+ind.pprotein.B1.target<-colnames(pprotein.df.B1) %in% targets.pproteins$Gene
+ind.pprotein.B2.target<-colnames(pprotein.df.B2) %in% targets.pproteins$Gene
+
+pprotein.df.B1<-pprotein.df.B1[,ind.pprotein.B1.target]
+pprotein.df.B2<-pprotein.df.B2[,ind.pprotein.B2.target]
+
+pprotein.new.ann.B1 <- data.frame(Metabolite=colnames(pprotein.df.B1),New.Name=paste0(rep("PP",dim(pprotein.df.B1)[2]),1:dim(pprotein.df.B1)[2]))
+pprotein.new.ann.B2 <- data.frame(Metabolite=colnames(pprotein.df.B2),New.Name=paste0(rep("PP",dim(pprotein.df.B2)[2]),1:dim(pprotein.df.B2)[2]))
+
+pprotein.df.B1.s<-var(pprotein.df.B1)
+pprotein.df.B2.s<-var(pprotein.df.B2)
+
+pprotein.df.B1.a.1<-glasso(pprotein.df.B1.s, rho=rho1p)
+pprotein.df.B2.a.1<-glasso(pprotein.df.B2.s, rho=rho1p)
+pprotein.df.B1.a.25<-glasso(pprotein.df.B1.s, rho=rho2p)
+pprotein.df.B2.a.25<-glasso(pprotein.df.B2.s, rho=rho2p)
+pprotein.df.B1.a.4<-glasso(pprotein.df.B1.s, rho=rho3p)
+pprotein.df.B2.a.4<-glasso(pprotein.df.B2.s, rho=rho3p)
+
+# Convert precision matrix to partial correlations
+pprotein.partial.B1.1 <- partial.cor(pprotein.df.B1.a.1$wi)
+pprotein.partial.B2.1 <- partial.cor(pprotein.df.B2.a.1$wi)
+pprotein.partial.B1.25 <- partial.cor(pprotein.df.B1.a.25$wi)
+pprotein.partial.B2.25 <- partial.cor(pprotein.df.B2.a.25$wi)
+pprotein.partial.B1.4 <- partial.cor(pprotein.df.B1.a.4$wi)
+pprotein.partial.B2.4 <- partial.cor(pprotein.df.B2.a.4$wi)
+
+# Threshold partial correlations
+thresh <- 1e-5  # Set your desired threshold
+pprotein.partial.B1.1[abs(pprotein.partial.B1.1) < thresh] <- 0
+pprotein.partial.B2.1[abs(pprotein.partial.B2.1) < thresh] <- 0
+pprotein.partial.B1.25[abs(pprotein.partial.B1.25) < thresh] <- 0
+pprotein.partial.B2.25[abs(pprotein.partial.B2.25) < thresh] <- 0
+pprotein.partial.B1.4[abs(pprotein.partial.B1.4) < thresh] <- 0
+pprotein.partial.B2.4[abs(pprotein.partial.B2.4) < thresh] <- 0
+
+diag(pprotein.partial.B1.1) <- 0
+diag(pprotein.partial.B2.1) <- 0
+diag(pprotein.partial.B1.25) <- 0
+diag(pprotein.partial.B2.25) <- 0
+diag(pprotein.partial.B1.4) <- 0
+diag(pprotein.partial.B2.4) <- 0
+
+
+# Identify and remove nodes with no remaining edges
+pprotein.partial.B1.1.connected <- apply(pprotein.partial.B1.1, 1, function(x) any(x != 0))
+pprotein.partial.B1.1.filtered <- pprotein.partial.B1.1[pprotein.partial.B1.1.connected, pprotein.partial.B1.1.connected]
+pprotein.partial.B1.1.labels.filtered <- pprotein.new.ann.B1$New.Name[pprotein.partial.B1.1.connected]
+pprotein.partial.B2.1.connected <- apply(pprotein.partial.B2.1, 1, function(x) any(x != 0))
+pprotein.partial.B2.1.filtered <- pprotein.partial.B2.1[pprotein.partial.B2.1.connected, pprotein.partial.B2.1.connected]
+pprotein.partial.B2.1.labels.filtered <- pprotein.new.ann.B2$New.Name[pprotein.partial.B2.1.connected]
+
+pprotein.partial.B1.25.connected <- apply(pprotein.partial.B1.25, 1, function(x) any(x != 0))
+pprotein.partial.B1.25.filtered <- pprotein.partial.B1.25[pprotein.partial.B1.25.connected, pprotein.partial.B1.25.connected]
+pprotein.partial.B1.25.labels.filtered <- pprotein.new.ann.B1$New.Name[pprotein.partial.B1.25.connected]
+pprotein.partial.B2.25.connected <- apply(pprotein.partial.B2.25, 1, function(x) any(x != 0))
+pprotein.partial.B2.25.filtered <- pprotein.partial.B2.25[pprotein.partial.B2.25.connected, pprotein.partial.B2.25.connected]
+pprotein.partial.B2.25.labels.filtered <- pprotein.new.ann.B2$New.Name[pprotein.partial.B2.25.connected]
+
+pprotein.partial.B1.4.connected <- apply(pprotein.partial.B1.4, 1, function(x) any(x != 0))
+pprotein.partial.B1.4.filtered <- pprotein.partial.B1.4[pprotein.partial.B1.4.connected, pprotein.partial.B1.4.connected]
+pprotein.partial.B1.4.labels.filtered <- pprotein.new.ann.B1$New.Name[pprotein.partial.B1.4.connected]
+pprotein.partial.B2.4.connected <- apply(pprotein.partial.B2.4, 1, function(x) any(x != 0))
+pprotein.partial.B2.4.filtered <- pprotein.partial.B2.4[pprotein.partial.B2.4.connected, pprotein.partial.B2.4.connected]
+pprotein.partial.B2.4.labels.filtered <- pprotein.new.ann.B2$New.Name[pprotein.partial.B2.4.connected]
+
+# rho=0.1
+layout(matrix(c(1, 2, 3), nrow = 1), widths = c(0.7, 0.7, 0.5))
+
+qgraph(pprotein.partial.B1.1.filtered, labels = pprotein.partial.B1.1.labels.filtered, arrows=FALSE, diag=FALSE, label.cex=1.25, vsize=10,
+       layout="spring", title = paste0("PProteomic data (Batch 1), FDR<0.1, glasso rho=",rho1p),
+       nodeNames = pprotein.new.ann.B1$Metabolite, legend=FALSE)
+qgraph(pprotein.partial.B2.1.filtered, labels = pprotein.partial.B2.1.labels.filtered, arrows=FALSE, diag=FALSE, label.cex=1.25, vsize=10,
+       layout="spring", title = paste0("PProteomic data (Batch 2), FDR<0.1, glasso rho=",rho1p),
+       nodeNames = pprotein.new.ann.B2$Metabolite, legend=FALSE)
+plot.new()
+legend("left", legend = paste0(pprotein.new.ann.B1$New.Name,": ", pprotein.new.ann.B2$Metabolite), cex = 0.7, bty = "n")
+
+# rho=0.25
+layout(matrix(c(1, 2, 3), nrow = 1), widths = c(0.7, 0.7, 0.5))
+
+qgraph(pprotein.partial.B1.25.filtered, labels = pprotein.partial.B1.25.labels.filtered, arrows=FALSE, diag=FALSE, label.cex=1.25, vsize=10,
+       layout="spring", title = paste0("PProteomic data (Batch 1), FDR<0.1, glasso rho=",rho2p),
+       nodeNames = pprotein.new.ann.B1$Metabolite, legend=FALSE)
+qgraph(pprotein.partial.B2.25.filtered, labels = pprotein.partial.B2.25.labels.filtered, arrows=FALSE, diag=FALSE, label.cex=1.25, vsize=10,
+       layout="spring", title = paste0("PProteomic data (Batch 2), FDR<0.1, glasso rho=",rho2p),
+       nodeNames = pprotein.new.ann.B2$Metabolite, legend=FALSE)
+plot.new()
+legend("left", legend = paste0(pprotein.new.ann.B1$New.Name,": ", pprotein.new.ann.B2$Metabolite), cex = 0.7, bty = "n")
+
+# rho=0.4
+layout(matrix(c(1, 2, 3), nrow = 1), widths = c(0.7, 0.7, 0.5))
+
+qgraph(pprotein.partial.B1.4.filtered, labels = pprotein.partial.B1.4.labels.filtered, arrows=FALSE, diag=FALSE, label.cex=1.25, vsize=10,
+       layout="spring", title = paste0("PProteomic data (Batch 1), FDR<0.1, glasso rho=",rho3p),
+       nodeNames = pprotein.new.ann.B1$Metabolite, legend=FALSE)
+qgraph(pprotein.partial.B2.4.filtered, labels = pprotein.partial.B2.4.labels.filtered, arrows=FALSE, diag=FALSE, label.cex=1.25, vsize=10,
+       layout="spring", title = paste0("PProteomic data (Batch 2), FDR<0.1, glasso rho=",rho3p),
+       nodeNames = pprotein.new.ann.B2$Metabolite, legend=FALSE)
+plot.new()
+legend("left", legend = paste0(pprotein.new.ann.B1$New.Name,": ", pprotein.new.ann.B2$Metabolite), cex = 0.7, bty = "n")
+
+
+# pprotein.prec.B1.1 <- pprotein.df.B1.a.1$wi
+# pprotein.prec.B2.1 <- pprotein.df.B2.a.1$wi
+# pprotein.prec.B1.25 <- pprotein.df.B1.a.25$wi
+# pprotein.prec.B2.25 <- pprotein.df.B2.a.25$wi
+# pprotein.prec.B1.4 <- pprotein.df.B1.a.4$wi
+# pprotein.prec.B2.4 <- pprotein.df.B2.a.4$wi
+
+# Convert to adjacency matrices (non-zero off-diagonal entries indicate edges)
+pprotein.adj.B1.1 <- (abs(pprotein.partial.B1.1) > 1e-5) * 1
+diag(pprotein.adj.B1.1) <- 0
+pprotein.adj.B2.1 <- (abs(pprotein.partial.B2.1) > 1e-5) * 1
+diag(pprotein.adj.B2.1) <- 0
+pprotein.adj.B1.25 <- (abs(pprotein.partial.B1.25) > 1e-5) * 1
+diag(pprotein.adj.B1.25) <- 0
+pprotein.adj.B2.25 <- (abs(pprotein.partial.B2.25) > 1e-5) * 1
+diag(pprotein.adj.B2.25) <- 0
+pprotein.adj.B1.4 <- (abs(pprotein.partial.B1.4) > 1e-5) * 1
+diag(pprotein.adj.B1.4) <- 0
+pprotein.adj.B2.4 <- (abs(pprotein.partial.B2.4) > 1e-5) * 1
+diag(pprotein.adj.B2.4) <- 0
+
+pprotein.g.B1.1 <- graph_from_adjacency_matrix(pprotein.adj.B1.1, mode = "undirected", diag = FALSE)
+pprotein.g.B2.1 <- graph_from_adjacency_matrix(pprotein.adj.B2.1, mode = "undirected", diag = FALSE)
+pprotein.g.B1.25 <- graph_from_adjacency_matrix(pprotein.adj.B1.25, mode = "undirected", diag = FALSE)
+pprotein.g.B2.25 <- graph_from_adjacency_matrix(pprotein.adj.B2.25, mode = "undirected", diag = FALSE)
+pprotein.g.B1.4 <- graph_from_adjacency_matrix(pprotein.adj.B1.4, mode = "undirected", diag = FALSE)
+pprotein.g.B2.4 <- graph_from_adjacency_matrix(pprotein.adj.B2.4, mode = "undirected", diag = FALSE)
+
+pprotein.stats.B1.1 <- network_mean_stats(pprotein.g.B1.1)
+pprotein.stats.B2.1 <- network_mean_stats(pprotein.g.B2.1)
+pprotein.stats.B1.25 <- network_mean_stats(pprotein.g.B1.25)
+pprotein.stats.B2.25 <- network_mean_stats(pprotein.g.B2.25)
+pprotein.stats.B1.4 <- network_mean_stats(pprotein.g.B1.4)
+pprotein.stats.B2.4 <- network_mean_stats(pprotein.g.B2.4)
+
+# Compare
+pprotein.stats.comparison.1 <- data.frame(
+  Metric = names(pprotein.stats.B1.1),
+  Batch1 = unlist(pprotein.stats.B1.1),
+  Batch2 = unlist(pprotein.stats.B2.1)
+)
+pprotein.stats.comparison.25 <- data.frame(
+  Metric = names(pprotein.stats.B1.25),
+  Batch1 = unlist(pprotein.stats.B1.25),
+  Batch2 = unlist(pprotein.stats.B2.25)
+)
+pprotein.stats.comparison.4 <- data.frame(
+  Metric = names(pprotein.stats.B1.4),
+  Batch1 = unlist(pprotein.stats.B1.4),
+  Batch2 = unlist(pprotein.stats.B2.4)
+)
+
+
+# Compare (Protein Level)
+pprotein.network.stats.1.B1 <- data.frame(Gene.B1=colnames(pprotein.df.B1),
+                                   degree.central.B1.rho.0.1=degree(pprotein.g.B1.1),
+                                   betweenness.B1.rho.0.1=betweenness(pprotein.g.B1.1),
+                                   closeness.B1.rho.0.1=closeness(pprotein.g.B1.1)
+                                   )
+pprotein.network.stats.1.B2 <- data.frame(Gene.B2=colnames(pprotein.df.B2),
+                                   degree.central.B2.rho.0.1=degree(pprotein.g.B2.1),
+                                   betweenness.B2.rho.0.1=betweenness(pprotein.g.B2.1),
+                                   closeness.B2.rho.0.1=closeness(pprotein.g.B2.1)
+                                   )
+pprotein.network.stats.25.B1 <- data.frame(Gene.B1=colnames(pprotein.df.B1),
+                                   degree.central.B1.rho.0.25=degree(pprotein.g.B1.25),
+                                   betweenness.B1.rho.0.25=betweenness(pprotein.g.B1.25),
+                                   closeness.B1.rho.0.25=closeness(pprotein.g.B1.25)
+                                   )
+pprotein.network.stats.25.B2 <- data.frame(Gene.B2=colnames(pprotein.df.B2),
+                                   degree.central.B2.rho.0.25=degree(pprotein.g.B2.25),
+                                   betweenness.B2.rho.0.25=betweenness(pprotein.g.B2.25),
+                                   closeness.B2.rho.0.25=closeness(pprotein.g.B2.25)
+                                   )
+pprotein.network.stats.4.B1 <- data.frame(Gene.B1=colnames(pprotein.df.B1),
+                                   degree.central.B1.rho.0.4=degree(pprotein.g.B1.4),
+                                   betweenness.B1.rho.0.4=betweenness(pprotein.g.B1.4),
+                                   closeness.B1.rho.0.4=closeness(pprotein.g.B1.4)
+                                   )
+pprotein.network.stats.4.B2 <- data.frame(Gene.B2=colnames(pprotein.df.B2),
+                                   degree.central.B2.rho.0.4=degree(pprotein.g.B2.4),
+                                   betweenness.B2.rho.0.4=betweenness(pprotein.g.B2.4),
+                                   closeness.B2.rho.0.4=closeness(pprotein.g.B2.4)
+                                   )
+
+
+pprotein.network.stats.1 <- inner_join(pprotein.network.stats.1.B1,pprotein.network.stats.1.B2,by=c("Gene.B1" = "Gene.B2")) |>
+  select(Gene=Gene.B1,degree.central.B1.rho.0.1,degree.central.B2.rho.0.1,betweenness.B1.rho.0.1,betweenness.B2.rho.0.1,
+         closeness.B1.rho.0.1,closeness.B2.rho.0.1)
+pprotein.network.stats.25 <- inner_join(pprotein.network.stats.25.B1,pprotein.network.stats.25.B2,by=c("Gene.B1" = "Gene.B2")) |>
+  select(Gene=Gene.B1,degree.central.B1.rho.0.25,degree.central.B2.rho.0.25,betweenness.B1.rho.0.25,betweenness.B2.rho.0.25,
+         closeness.B1.rho.0.25,closeness.B2.rho.0.25)
+pprotein.network.stats.4 <- inner_join(pprotein.network.stats.4.B1,pprotein.network.stats.4.B2,by=c("Gene.B1" = "Gene.B2")) |>
+  select(Gene=Gene.B1,degree.central.B1.rho.0.4,degree.central.B2.rho.0.4,betweenness.B1.rho.0.4,betweenness.B2.rho.0.4,
+         closeness.B1.rho.0.4,closeness.B2.rho.0.4)
+
+pprotein.network.stats.1[is.na(pprotein.network.stats.1)] <- 0
+pprotein.network.stats.25[is.na(pprotein.network.stats.25)] <- 0
+pprotein.network.stats.4[is.na(pprotein.network.stats.4)] <- 0
+
+```
+
+
+```{r pprotein_plots, echo=FALSE, fig.width=6, fig.height=4}
+
+
+pprotein.stats.comparison.num.edges <- data.frame(Batch=rep(c("Batch1","Batch2"),each=3),
+                                              rho=rep(c(0.1,0.25,0.4),times=2),
+                                              num_edges=rbind(pprotein.stats.comparison.1["num_edges","Batch1"],
+                                                              pprotein.stats.comparison.25["num_edges","Batch1"],
+                                                              pprotein.stats.comparison.4["num_edges","Batch1"],
+                                                              pprotein.stats.comparison.1["num_edges","Batch2"],
+                                                              pprotein.stats.comparison.25["num_edges","Batch2"],
+                                                              pprotein.stats.comparison.4["num_edges","Batch2"])
+)
+pprotein.stats.comparison.density <- data.frame(Batch=rep(c("Batch1","Batch2"),each=3),
+                                              rho=rep(c(0.1,0.25,0.4),times=2),
+                                              density=rbind(pprotein.stats.comparison.1["density","Batch1"],
+                                                              pprotein.stats.comparison.25["density","Batch1"],
+                                                              pprotein.stats.comparison.4["density","Batch1"],
+                                                              pprotein.stats.comparison.1["density","Batch2"],
+                                                              pprotein.stats.comparison.25["density","Batch2"],
+                                                              pprotein.stats.comparison.4["density","Batch2"])
+)
+pprotein.stats.comparison.clust.coeff <- data.frame(Batch=rep(c("Batch1","Batch2"),each=3),
+                                              rho=rep(c(0.1,0.25,0.4),times=2),
+                                              clustering_coeff=rbind(pprotein.stats.comparison.1["clustering_coeff","Batch1"],
+                                                              pprotein.stats.comparison.25["clustering_coeff","Batch1"],
+                                                              pprotein.stats.comparison.4["clustering_coeff","Batch1"],
+                                                              pprotein.stats.comparison.1["clustering_coeff","Batch2"],
+                                                              pprotein.stats.comparison.25["clustering_coeff","Batch2"],
+                                                              pprotein.stats.comparison.4["clustering_coeff","Batch2"])
+)
+pprotein.stats.comparison.degree.cent <- data.frame(Batch=rep(c("Batch1","Batch2"),each=3),
+                                              rho=rep(c(0.1,0.25,0.4),times=2),
+                                              degree_centrality=rbind(pprotein.stats.comparison.1["degree_centrality","Batch1"],
+                                                              pprotein.stats.comparison.25["degree_centrality","Batch1"],
+                                                              pprotein.stats.comparison.4["degree_centrality","Batch1"],
+                                                              pprotein.stats.comparison.1["degree_centrality","Batch2"],
+                                                              pprotein.stats.comparison.25["degree_centrality","Batch2"],
+                                                              pprotein.stats.comparison.4["degree_centrality","Batch2"])
+)
+pprotein.stats.comparison.between.cent <- data.frame(Batch=rep(c("Batch1","Batch2"),each=3),
+                                              rho=rep(c(0.1,0.25,0.4),times=2),
+                                              betweenness_centrality=rbind(pprotein.stats.comparison.1["betweenness_centrality","Batch1"],
+                                                              pprotein.stats.comparison.25["betweenness_centrality","Batch1"],
+                                                              pprotein.stats.comparison.4["betweenness_centrality","Batch1"],
+                                                              pprotein.stats.comparison.1["betweenness_centrality","Batch2"],
+                                                              pprotein.stats.comparison.25["betweenness_centrality","Batch2"],
+                                                              pprotein.stats.comparison.4["betweenness_centrality","Batch2"])
+)
+
+ggplot(pprotein.stats.comparison.num.edges,aes(x=rho,y=num_edges,color=Batch)) +
+  geom_point(size=2) +
+  geom_line() +
+  labs(y = "Number of Edges") +
+  ggtitle("Phosphoprotein: Batch Comparison - Number of Edges") +
+  theme_minimal()
+ggplot(pprotein.stats.comparison.density,aes(x=rho,y=density,color=Batch)) +
+  geom_point(size=2) +
+  geom_line() +
+  labs(y = "Density") +
+  ggtitle("Phosphoprotein: Batch Comparison - Density") +
+  theme_minimal()
+ggplot(pprotein.stats.comparison.clust.coeff,aes(x=rho,y=clustering_coeff,color=Batch)) +
+  geom_point(size=2) +
+  geom_line() +
+  labs(y = "Clustering Coefficient") +
+  ggtitle("Phosphoprotein: Batch Comparison - Clustering Coefficient") +
+  theme_minimal()
+ggplot(pprotein.stats.comparison.degree.cent,aes(x=rho,y=degree_centrality,color=Batch)) +
+  geom_point(size=2) +
+  geom_line() +
+  labs(y = "Degree Centrality") +
+  ggtitle("Phosphoprotein: Batch Comparison - Degree Centrality") +
+  theme_minimal()
+ggplot(pprotein.stats.comparison.between.cent,aes(x=rho,y=betweenness_centrality,color=Batch)) +
+  geom_point(size=2) +
+  geom_line() +
+  labs(y = "Betweenness Centrality") +
+  ggtitle("Phosphoprotein: Batch Comparison - Betweenness Centrality") +
+  theme_minimal()
+
+
+```
+
+
+```{r pprotein_heatmap, echo=FALSE, fig.width=8, fig.height=4}
+
+pprotein.network.stats.num.edges <- data.frame(
+  rho.0.1.B1 = pprotein.network.stats.1[,"degree.central.B1.rho.0.1"],
+  rho.0.25.B1 = pprotein.network.stats.25[,"degree.central.B1.rho.0.25"],
+  rho.0.4.B1 = pprotein.network.stats.4[,"degree.central.B1.rho.0.4"],
+  rho.0.1.B2 = pprotein.network.stats.1[,"degree.central.B2.rho.0.1"],
+  rho.0.25.B2 = pprotein.network.stats.25[,"degree.central.B2.rho.0.25"],
+  rho.0.4.B2 = pprotein.network.stats.4[,"degree.central.B2.rho.0.4"]
+)
+rownames(pprotein.network.stats.num.edges) <- pprotein.network.stats.1$Gene
+
+pprotein.network.stats.between <- data.frame(
+  rho.0.1.B1 = pprotein.network.stats.1[,"betweenness.B1.rho.0.1"],
+  rho.0.25.B1 = pprotein.network.stats.25[,"betweenness.B1.rho.0.25"],
+  rho.0.4.B1 = pprotein.network.stats.4[,"betweenness.B1.rho.0.4"],
+  rho.0.1.B2 = pprotein.network.stats.1[,"betweenness.B2.rho.0.1"],
+  rho.0.25.B2 = pprotein.network.stats.25[,"betweenness.B2.rho.0.25"],
+  rho.0.4.B2 = pprotein.network.stats.4[,"betweenness.B2.rho.0.4"]
+)
+rownames(pprotein.network.stats.between) <- pprotein.network.stats.1$Gene
+
+pprotein.network.stats.close <- data.frame(
+  rho.0.1.B1 = pprotein.network.stats.1[,"closeness.B1.rho.0.1"],
+  rho.0.25.B1 = pprotein.network.stats.25[,"closeness.B1.rho.0.25"],
+  rho.0.4.B1 = pprotein.network.stats.4[,"closeness.B1.rho.0.4"],
+  rho.0.1.B2 = pprotein.network.stats.1[,"closeness.B2.rho.0.1"],
+  rho.0.25.B2 = pprotein.network.stats.25[,"closeness.B2.rho.0.25"],
+  rho.0.4.B2 = pprotein.network.stats.4[,"closeness.B2.rho.0.4"]
+)
+rownames(pprotein.network.stats.close) <- pprotein.network.stats.1$Gene
+
+Batches_pprotein <- c(rep("B1",3),rep("B2",3))
+rho_str_pprotein <- rep(c(rho1p,rho2p,rho3p),times=2)
+col_anno_pprotein <- data.frame(Batch = Batches_pprotein, Rho = rho_str_pprotein)
+ha_pprotein <- HeatmapAnnotation(df = col_anno_pprotein,
+                        col = list(Batch = c("B1" = "gray", "B2" = "orange"),
+                                   Rho = c("0.1" = "purple", "0.25" = "brown", "0.4" = "green")),
+                        show_legend = TRUE)
+
+rownames(col_anno_pprotein) <- colnames(pprotein.network.stats.num.edges)
+rownames(col_anno_pprotein) <- colnames(pprotein.network.stats.between)
+rownames(col_anno_pprotein) <- colnames(pprotein.network.stats.close)
+
+Heatmap(as.matrix(scale(pprotein.network.stats.num.edges)),
+        top_annotation = ha_pprotein,
+        column_split = Batches_pprotein,
+        column_title = "Phosphoprotein: Number of Edges (Scaled)",
+        column_title_gp = gpar(fontsize = 15),
+        row_names_gp = gpar(fontsize = 7),
+        cluster_columns = FALSE,
+        cluster_rows = TRUE,
+        show_column_names = FALSE,
+        show_row_dend = FALSE,
+        show_column_dend = FALSE,
+        heatmap_legend_param = list(title = "Score")
+        )
+
+Heatmap(as.matrix(scale(pprotein.network.stats.between)),
+        top_annotation = ha_pprotein,
+        column_split = Batches_pprotein,
+        column_title = "Phosphoprotein: Betweenness (Scaled)",
+        column_title_gp = gpar(fontsize = 15),
+        row_names_gp = gpar(fontsize = 7),
+        cluster_columns = FALSE,
+        cluster_rows = TRUE,
+        show_column_names = FALSE,
+        show_row_dend = FALSE,
+        show_column_dend = FALSE,
+        heatmap_legend_param = list(title = "Score")
+        )
+
+Heatmap(as.matrix(scale(pprotein.network.stats.close)),
+        top_annotation = ha_pprotein,
+        column_split = Batches_pprotein,
+        column_title = "Phosphoprotein: Closeness (Scaled)",
+        column_title_gp = gpar(fontsize = 15),
+        row_names_gp = gpar(fontsize = 7),
+        cluster_columns = FALSE,
+        cluster_rows = TRUE,
+        show_column_names = FALSE,
+        show_row_dend = FALSE,
+        show_column_dend = FALSE,
+        heatmap_legend_param = list(title = "Score")
+        )
+
+```
+
+
+
+```{r pprotein_remove,echo=FALSE}
+
+remove(pprotein.network.stats.1.B1,pprotein.network.stats.1.B2,pprotein.network.stats.25.B1,pprotein.network.stats.25.B2,
+       pprotein.network.stats.4.B1,pprotein.network.stats.4.B2)
+
+
+```
+
+
+
+## Networks all metabolites together (ICMS, HILIC)
+
+
+```{r hilicicmsnetwork, echo=FALSE, fig.width=11.5, fig.height=7, dpi=300}
+
+# combining datasets
+
+hilic.icms.df.B1 <- cbind(hilic.df.B1.sorted,icms.df.B1.sorted)
+hilic.icms.df.B2 <- cbind(hilic.df.B2.sorted,icms.df.B2.sorted)
+
+hilic.icms.df.B1.s <- var(hilic.icms.df.B1)
+hilic.icms.df.B2.s <- var(hilic.icms.df.B2)
+
+
+hilic.icms.new.ann.B1 <- rbind(hilic.new.ann.B1.sorted,icms.new.ann.B1.sorted)
+hilic.icms.new.ann.B1$Type <- rep(c("HILIC","ICMS"),times=c(dim(hilic.df.B1.sorted)[2],dim(icms.df.B1.sorted)[2]))
+hilic.icms.new.ann.B2 <- rbind(hilic.new.ann.B2.sorted,icms.new.ann.B2.sorted)
+hilic.icms.new.ann.B2$Type <- rep(c("HILIC","ICMS"),times=c(dim(hilic.df.B2.sorted)[2],dim(icms.df.B2.sorted)[2]))
+
+hilic.icms.df.B1.a.5<-glasso(hilic.icms.df.B1.s, rho=rho1)
+hilic.icms.df.B2.a.5<-glasso(hilic.icms.df.B2.s, rho=rho1)
+hilic.icms.df.B1.a.75<-glasso(hilic.icms.df.B1.s, rho=rho2)
+hilic.icms.df.B2.a.75<-glasso(hilic.icms.df.B2.s, rho=rho2)
+hilic.icms.df.B1.a.9<-glasso(hilic.icms.df.B1.s, rho=rho3)
+hilic.icms.df.B2.a.9<-glasso(hilic.icms.df.B2.s, rho=rho3)
+
+# Convert precision matrix to partial correlations
+hilic.icms.partial.B1.5 <- partial.cor(hilic.icms.df.B1.a.5$wi)
+hilic.icms.partial.B2.5 <- partial.cor(hilic.icms.df.B2.a.5$wi)
+hilic.icms.partial.B1.75 <- partial.cor(hilic.icms.df.B1.a.75$wi)
+hilic.icms.partial.B2.75 <- partial.cor(hilic.icms.df.B2.a.75$wi)
+hilic.icms.partial.B1.9 <- partial.cor(hilic.icms.df.B1.a.9$wi)
+hilic.icms.partial.B2.9 <- partial.cor(hilic.icms.df.B2.a.9$wi)
+
+# Threshold partial correlations
+thresh <- 1e-5  # Set your desired threshold
+hilic.icms.partial.B1.5[abs(hilic.icms.partial.B1.5) < thresh] <- 0
+hilic.icms.partial.B2.5[abs(hilic.icms.partial.B2.5) < thresh] <- 0
+hilic.icms.partial.B1.75[abs(hilic.icms.partial.B1.75) < thresh] <- 0
+hilic.icms.partial.B2.75[abs(hilic.icms.partial.B2.75) < thresh] <- 0
+hilic.icms.partial.B1.9[abs(hilic.icms.partial.B1.9) < thresh] <- 0
+hilic.icms.partial.B2.9[abs(hilic.icms.partial.B2.9) < thresh] <- 0
+
+diag(hilic.icms.partial.B1.5) <- 0
+diag(hilic.icms.partial.B2.5) <- 0
+diag(hilic.icms.partial.B1.75) <- 0
+diag(hilic.icms.partial.B2.75) <- 0
+diag(hilic.icms.partial.B1.9) <- 0
+diag(hilic.icms.partial.B2.9) <- 0
+
+
+# Identify and remove nodes with no remaining edges
+hilic.icms.partial.B1.5.connected <- apply(hilic.icms.partial.B1.5, 1, function(x) any(x != 0))
+hilic.icms.partial.B1.5.filtered <- hilic.icms.partial.B1.5[hilic.icms.partial.B1.5.connected, hilic.icms.partial.B1.5.connected]
+hilic.icms.partial.B1.5.labels.filtered <- hilic.icms.new.ann.B1$New.Name[hilic.icms.partial.B1.5.connected]
+hilic.icms.partial.B2.5.connected <- apply(hilic.icms.partial.B2.5, 1, function(x) any(x != 0))
+hilic.icms.partial.B2.5.filtered <- hilic.icms.partial.B2.5[hilic.icms.partial.B2.5.connected, hilic.icms.partial.B2.5.connected]
+hilic.icms.partial.B2.5.labels.filtered <- hilic.icms.new.ann.B2$New.Name[hilic.icms.partial.B2.5.connected]
+
+hilic.icms.partial.B1.75.connected <- apply(hilic.icms.partial.B1.75, 1, function(x) any(x != 0))
+hilic.icms.partial.B1.75.filtered <- hilic.icms.partial.B1.75[hilic.icms.partial.B1.75.connected, hilic.icms.partial.B1.75.connected]
+hilic.icms.partial.B1.75.labels.filtered <- hilic.icms.new.ann.B1$New.Name[hilic.icms.partial.B1.75.connected]
+hilic.icms.partial.B2.75.connected <- apply(hilic.icms.partial.B2.75, 1, function(x) any(x != 0))
+hilic.icms.partial.B2.75.filtered <- hilic.icms.partial.B2.75[hilic.icms.partial.B2.75.connected, hilic.icms.partial.B2.75.connected]
+hilic.icms.partial.B2.75.labels.filtered <- hilic.icms.new.ann.B2$New.Name[hilic.icms.partial.B2.75.connected]
+
+hilic.icms.partial.B1.9.connected <- apply(hilic.icms.partial.B1.9, 1, function(x) any(x != 0))
+hilic.icms.partial.B1.9.filtered <- hilic.icms.partial.B1.9[hilic.icms.partial.B1.9.connected, hilic.icms.partial.B1.9.connected]
+hilic.icms.partial.B1.9.labels.filtered <- hilic.icms.new.ann.B1$New.Name[hilic.icms.partial.B1.9.connected]
+hilic.icms.partial.B2.9.connected <- apply(hilic.icms.partial.B2.9, 1, function(x) any(x != 0))
+hilic.icms.partial.B2.9.filtered <- hilic.icms.partial.B2.9[hilic.icms.partial.B2.9.connected, hilic.icms.partial.B2.9.connected]
+hilic.icms.partial.B2.9.labels.filtered <- hilic.icms.new.ann.B2$New.Name[hilic.icms.partial.B2.9.connected]
+
+
+# rho=0.5
+layout(matrix(c(1, 2, 3), nrow = 1), widths = c(1, 1, 0.7))
+
+qgraph(hilic.icms.partial.B1.5.filtered, labels = hilic.icms.partial.B1.5.labels.filtered, arrows = FALSE, diag = FALSE,
+       label.cex = 1.25, vsize = 7, layout = "spring",
+       title = paste0("HILIC & ICMS (Batch 1), FDR<0.1, glasso rho=", rho1),
+       nodeNames = hilic.icms.new.ann.B1$HMDB, legend = FALSE)
+qgraph(hilic.icms.partial.B2.5.filtered, labels = hilic.icms.partial.B2.5.labels.filtered, arrows = FALSE, diag = FALSE,
+       label.cex = 1.25, vsize = 7, layout = "spring",
+       title = paste0("HILIC & ICMS (Batch 2), FDR<0.1, glasso rho=", rho1),
+       nodeNames = hilic.icms.new.ann.B2$HMDB, legend = FALSE)
+plot.new()
+legend("left", legend = paste0(hilic.icms.new.ann.B2$New.Name,": ",hilic.icms.new.ann.B2$HMDB), cex = 0.85, bty = "n", ncol = 2)
+
+# rho=0.75
+layout(matrix(c(1, 2, 3), nrow = 1), widths = c(1, 1, 0.7))
+
+qgraph(hilic.icms.partial.B1.75.filtered, labels = hilic.icms.partial.B1.75.labels.filtered, arrows = FALSE, diag = FALSE,
+       label.cex = 1.25, vsize = 7, layout = "spring",
+       title = paste0("HILIC & ICMS (Batch 1), FDR<0.1, glasso rho=", rho2),
+       nodeNames = hilic.icms.new.ann.B1$HMDB, legend = FALSE)
+qgraph(hilic.icms.partial.B2.75.filtered, labels = hilic.icms.partial.B2.75.labels.filtered, arrows = FALSE, diag = FALSE,
+       label.cex = 1.25, vsize = 7, layout = "spring",
+       title = paste0("HILIC & ICMS (Batch 2), FDR<0.1, glasso rho=", rho2),
+       nodeNames = hilic.icms.new.ann.B2$HMDB, legend = FALSE)
+plot.new()
+legend("left", legend = paste0(hilic.icms.new.ann.B2$New.Name,": ",hilic.icms.new.ann.B2$HMDB), cex = 0.85, bty = "n", ncol = 2)
+
+# rho=0.9
+layout(matrix(c(1, 2, 3), nrow = 1), widths = c(1, 1, 0.7))
+
+qgraph(hilic.icms.partial.B1.9.filtered, labels = hilic.icms.partial.B1.9.labels.filtered, arrows = FALSE, diag = FALSE,
+       label.cex = 1.25, vsize = 7, layout = "spring",
+       title = paste0("HILIC & ICMS (Batch 1), FDR<0.1, glasso rho=", rho3),
+       nodeNames = hilic.icms.new.ann.B1$HMDB, legend = FALSE)
+qgraph(hilic.icms.partial.B2.9.filtered, labels = hilic.icms.partial.B2.9.labels.filtered, arrows = FALSE, diag = FALSE,
+       label.cex = 1.25, vsize = 7, layout = "spring",
+       title = paste0("HILIC & ICMS (Batch 2), FDR<0.1, glasso rho=", rho3),
+       nodeNames = hilic.icms.new.ann.B2$HMDB, legend = FALSE)
+plot.new()
+legend("left", legend = paste0(hilic.icms.new.ann.B2$New.Name,": ",hilic.icms.new.ann.B2$HMDB), cex = 0.85, bty = "n", ncol = 2)
+
+
+# hilic.icms.prec.B1.5 <- hilic.icms.df.B1.a.5$wi
+# hilic.icms.prec.B2.5 <- hilic.icms.df.B2.a.5$wi
+# hilic.icms.prec.B1.75 <- hilic.icms.df.B1.a.75$wi
+# hilic.icms.prec.B2.75 <- hilic.icms.df.B2.a.75$wi
+# hilic.icms.prec.B1.9 <- hilic.icms.df.B1.a.9$wi
+# hilic.icms.prec.B2.9 <- hilic.icms.df.B2.a.9$wi
+
+# Convert to adjacency matrices (non-zero off-diagonal entries indicate edges)
+hilic.icms.adj.B1.5 <- (abs(hilic.icms.partial.B1.5) > 1e-5) * 1
+diag(hilic.icms.adj.B1.5) <- 0
+hilic.icms.adj.B2.5 <- (abs(hilic.icms.partial.B2.5) > 1e-5) * 1
+diag(hilic.icms.adj.B2.5) <- 0
+hilic.icms.adj.B1.75 <- (abs(hilic.icms.partial.B1.75) > 1e-5) * 1
+diag(hilic.icms.adj.B1.75) <- 0
+hilic.icms.adj.B2.75 <- (abs(hilic.icms.partial.B2.75) > 1e-5) * 1
+diag(hilic.icms.adj.B2.75) <- 0
+hilic.icms.adj.B1.9 <- (abs(hilic.icms.partial.B1.9) > 1e-5) * 1
+diag(hilic.icms.adj.B1.9) <- 0
+hilic.icms.adj.B2.9 <- (abs(hilic.icms.partial.B2.9) > 1e-5) * 1
+diag(hilic.icms.adj.B2.9) <- 0
+
+hilic.icms.g.B1.5 <- graph_from_adjacency_matrix(hilic.icms.adj.B1.5, mode = "undirected", diag = FALSE)
+hilic.icms.g.B2.5 <- graph_from_adjacency_matrix(hilic.icms.adj.B2.5, mode = "undirected", diag = FALSE)
+hilic.icms.g.B1.75 <- graph_from_adjacency_matrix(hilic.icms.adj.B1.75, mode = "undirected", diag = FALSE)
+hilic.icms.g.B2.75 <- graph_from_adjacency_matrix(hilic.icms.adj.B2.75, mode = "undirected", diag = FALSE)
+hilic.icms.g.B1.9 <- graph_from_adjacency_matrix(hilic.icms.adj.B1.9, mode = "undirected", diag = FALSE)
+hilic.icms.g.B2.9 <- graph_from_adjacency_matrix(hilic.icms.adj.B2.9, mode = "undirected", diag = FALSE)
+
+hilic.icms.stats.B1.5 <- network_mean_stats(hilic.icms.g.B1.5)
+hilic.icms.stats.B2.5 <- network_mean_stats(hilic.icms.g.B2.5)
+hilic.icms.stats.B1.75 <- network_mean_stats(hilic.icms.g.B1.75)
+hilic.icms.stats.B2.75 <- network_mean_stats(hilic.icms.g.B2.75)
+hilic.icms.stats.B1.9 <- network_mean_stats(hilic.icms.g.B1.9)
+hilic.icms.stats.B2.9 <- network_mean_stats(hilic.icms.g.B2.9)
+
+# Compare
+hilic.icms.stats.comparison.5 <- data.frame(
+  Metric = names(hilic.icms.stats.B1.5),
+  Batch1 = unlist(hilic.icms.stats.B1.5),
+  Batch2 = unlist(hilic.icms.stats.B2.5)
+)
+hilic.icms.stats.comparison.75 <- data.frame(
+  Metric = names(hilic.icms.stats.B1.75),
+  Batch1 = unlist(hilic.icms.stats.B1.75),
+  Batch2 = unlist(hilic.icms.stats.B2.75)
+)
+hilic.icms.stats.comparison.9 <- data.frame(
+  Metric = names(hilic.icms.stats.B1.9),
+  Batch1 = unlist(hilic.icms.stats.B1.9),
+  Batch2 = unlist(hilic.icms.stats.B2.9)
+)
+
+
+
+# Compare (Metabolite Level)
+hilic.icms.network.stats.5.B1 <- data.frame(HMDB=colnames(hilic.icms.df.B1),
+                                   degree.central.B1.rho.0.5=degree(hilic.icms.g.B1.5),
+                                   betweenness.B1.rho.0.5=betweenness(hilic.icms.g.B1.5),
+                                   closeness.B1.rho.0.5=closeness(hilic.icms.g.B1.5),
+                                   Type=rep(c("HILIC","ICMS"),times=c(dim(hilic.df.B1)[2],dim(icms.df.B1)[2]))
+                                   )
+hilic.icms.network.stats.5.B2 <- data.frame(HMDB=colnames(hilic.icms.df.B2),
+                                   degree.central.B2.rho.0.5=degree(hilic.icms.g.B2.5),
+                                   betweenness.B2.rho.0.5=betweenness(hilic.icms.g.B2.5),
+                                   closeness.B2.rho.0.5=closeness(hilic.icms.g.B2.5),
+                                   Type=rep(c("HILIC","ICMS"),times=c(dim(hilic.df.B1)[2],dim(icms.df.B1)[2]))
+                                   )
+hilic.icms.network.stats.75.B1 <- data.frame(HMDB=colnames(hilic.icms.df.B1),
+                                   degree.central.B1.rho.0.75=degree(hilic.icms.g.B1.75),
+                                   betweenness.B1.rho.0.75=betweenness(hilic.icms.g.B1.75),
+                                   closeness.B1.rho.0.75=closeness(hilic.icms.g.B1.75),
+                                   Type=rep(c("HILIC","ICMS"),times=c(dim(hilic.df.B1)[2],dim(icms.df.B1)[2]))
+                                   )
+hilic.icms.network.stats.75.B2 <- data.frame(HMDB=colnames(hilic.icms.df.B2),
+                                   degree.central.B2.rho.0.75=degree(hilic.icms.g.B2.75),
+                                   betweenness.B2.rho.0.75=betweenness(hilic.icms.g.B2.75),
+                                   closeness.B2.rho.0.75=closeness(hilic.icms.g.B2.75),
+                                   Type=rep(c("HILIC","ICMS"),times=c(dim(hilic.df.B1)[2],dim(icms.df.B1)[2]))
+                                   )
+hilic.icms.network.stats.9.B1 <- data.frame(HMDB=colnames(hilic.icms.df.B1),
+                                   degree.central.B1.rho.0.9=degree(hilic.icms.g.B1.9),
+                                   betweenness.B1.rho.0.9=betweenness(hilic.icms.g.B1.9),
+                                   closeness.B1.rho.0.9=closeness(hilic.icms.g.B1.9),
+                                   Type=rep(c("HILIC","ICMS"),times=c(dim(hilic.df.B1)[2],dim(icms.df.B1)[2]))
+                                   )
+hilic.icms.network.stats.9.B2 <- data.frame(HMDB=colnames(hilic.icms.df.B2),
+                                   degree.central.B2.rho.0.9=degree(hilic.icms.g.B2.9),
+                                   betweenness.B2.rho.0.9=betweenness(hilic.icms.g.B2.9),
+                                   closeness.B2.rho.0.9=closeness(hilic.icms.g.B2.9),
+                                   Type=rep(c("HILIC","ICMS"),times=c(dim(hilic.df.B1)[2],dim(icms.df.B1)[2]))
+                                   )
+
+hilic.icms.network.stats.5.B1.H.temp <- hilic.icms.network.stats.5.B1 |> filter(Type == "HILIC")
+hilic.icms.network.stats.5.B1.I.temp <- hilic.icms.network.stats.5.B1 |> filter(Type == "ICMS")
+hilic.icms.network.stats.5.B2.H.temp <- hilic.icms.network.stats.5.B2 |> filter(Type == "HILIC")
+hilic.icms.network.stats.5.B2.I.temp <- hilic.icms.network.stats.5.B2 |> filter(Type == "ICMS")
+hilic.icms.network.stats.75.B1.H.temp <- hilic.icms.network.stats.75.B1 |> filter(Type == "HILIC")
+hilic.icms.network.stats.75.B1.I.temp <- hilic.icms.network.stats.75.B1 |> filter(Type == "ICMS")
+hilic.icms.network.stats.75.B2.H.temp <- hilic.icms.network.stats.75.B2 |> filter(Type == "HILIC")
+hilic.icms.network.stats.75.B2.I.temp <- hilic.icms.network.stats.75.B2 |> filter(Type == "ICMS")
+hilic.icms.network.stats.9.B1.H.temp <- hilic.icms.network.stats.9.B1 |> filter(Type == "HILIC")
+hilic.icms.network.stats.9.B1.I.temp <- hilic.icms.network.stats.9.B1 |> filter(Type == "ICMS")
+hilic.icms.network.stats.9.B2.H.temp <- hilic.icms.network.stats.9.B2 |> filter(Type == "HILIC")
+hilic.icms.network.stats.9.B2.I.temp <- hilic.icms.network.stats.9.B2 |> filter(Type == "ICMS")
+
+
+hilic.icms.network.stats.5.B1.H.temp2 <- inner_join(hilic.icms.network.stats.5.B1.H.temp,hilic.new.ann.B1.sorted,by = "HMDB") |>
+  select(Metabolite.B1,degree.central.B1.rho.0.5,betweenness.B1.rho.0.5,closeness.B1.rho.0.5,HMDB,Type)
+hilic.icms.network.stats.5.B1.I.temp2 <- inner_join(hilic.icms.network.stats.5.B1.I.temp,icms.new.ann.B1.sorted,by = "HMDB") |>
+  select(Metabolite.B1,degree.central.B1.rho.0.5,betweenness.B1.rho.0.5,closeness.B1.rho.0.5,HMDB,Type)
+hilic.icms.network.stats.5.B2.H.temp2 <- inner_join(hilic.icms.network.stats.5.B2.H.temp,hilic.new.ann.B2.sorted,by = "HMDB") |>
+  select(Metabolite.B2,degree.central.B2.rho.0.5,betweenness.B2.rho.0.5,closeness.B2.rho.0.5,HMDB,Type)
+hilic.icms.network.stats.5.B2.I.temp2 <- inner_join(hilic.icms.network.stats.5.B2.I.temp,icms.new.ann.B2.sorted,by = "HMDB") |>
+  select(Metabolite.B2,degree.central.B2.rho.0.5,betweenness.B2.rho.0.5,closeness.B2.rho.0.5,HMDB,Type)
+
+hilic.icms.network.stats.75.B1.H.temp2 <- inner_join(hilic.icms.network.stats.75.B1.H.temp,hilic.new.ann.B1.sorted,by = "HMDB") |>
+  select(Metabolite.B1,degree.central.B1.rho.0.75,betweenness.B1.rho.0.75,closeness.B1.rho.0.75,HMDB,Type)
+hilic.icms.network.stats.75.B1.I.temp2 <- inner_join(hilic.icms.network.stats.75.B1.I.temp,icms.new.ann.B1.sorted,by = "HMDB") |>
+  select(Metabolite.B1,degree.central.B1.rho.0.75,betweenness.B1.rho.0.75,closeness.B1.rho.0.75,HMDB,Type)
+hilic.icms.network.stats.75.B2.H.temp2 <- inner_join(hilic.icms.network.stats.75.B2.H.temp,hilic.new.ann.B2.sorted,by = "HMDB") |>
+  select(Metabolite.B2,degree.central.B2.rho.0.75,betweenness.B2.rho.0.75,closeness.B2.rho.0.75,HMDB,Type)
+hilic.icms.network.stats.75.B2.I.temp2 <- inner_join(hilic.icms.network.stats.75.B2.I.temp,icms.new.ann.B2.sorted,by = "HMDB") |>
+  select(Metabolite.B2,degree.central.B2.rho.0.75,betweenness.B2.rho.0.75,closeness.B2.rho.0.75,HMDB,Type)
+
+hilic.icms.network.stats.9.B1.H.temp2 <- inner_join(hilic.icms.network.stats.9.B1.H.temp,hilic.new.ann.B1.sorted,by = "HMDB") |>
+  select(Metabolite.B1,degree.central.B1.rho.0.9,betweenness.B1.rho.0.9,closeness.B1.rho.0.9,HMDB,Type)
+hilic.icms.network.stats.9.B1.I.temp2 <- inner_join(hilic.icms.network.stats.9.B1.I.temp,icms.new.ann.B1.sorted,by = "HMDB") |>
+  select(Metabolite.B1,degree.central.B1.rho.0.9,betweenness.B1.rho.0.9,closeness.B1.rho.0.9,HMDB,Type)
+hilic.icms.network.stats.9.B2.H.temp2 <- inner_join(hilic.icms.network.stats.9.B2.H.temp,hilic.new.ann.B2.sorted,by = "HMDB") |>
+  select(Metabolite.B2,degree.central.B2.rho.0.9,betweenness.B2.rho.0.9,closeness.B2.rho.0.9,HMDB,Type)
+hilic.icms.network.stats.9.B2.I.temp2 <- inner_join(hilic.icms.network.stats.9.B2.I.temp,icms.new.ann.B2.sorted,by = "HMDB") |>
+  select(Metabolite.B2,degree.central.B2.rho.0.9,betweenness.B2.rho.0.9,closeness.B2.rho.0.9,HMDB,Type)
+
+
+hilic.icms.network.stats.5.H <- inner_join(hilic.icms.network.stats.5.B1.H.temp2,hilic.icms.network.stats.5.B2.H.temp2,by = "HMDB") |>
+  select(HMDB,Metabolite.B1,Metabolite.B2,degree.central.B1.rho.0.5,degree.central.B2.rho.0.5,
+         betweenness.B1.rho.0.5,betweenness.B2.rho.0.5,closeness.B1.rho.0.5,closeness.B2.rho.0.5)
+hilic.icms.network.stats.5.I <- inner_join(hilic.icms.network.stats.5.B1.I.temp2,hilic.icms.network.stats.5.B2.I.temp2,by = "HMDB") |>
+  select(HMDB,Metabolite.B1,Metabolite.B2,degree.central.B1.rho.0.5,degree.central.B2.rho.0.5,
+         betweenness.B1.rho.0.5,betweenness.B2.rho.0.5,closeness.B1.rho.0.5,closeness.B2.rho.0.5)
+hilic.icms.network.stats.75.H <- inner_join(hilic.icms.network.stats.75.B1.H.temp2,hilic.icms.network.stats.75.B2.H.temp2,by = "HMDB") |>
+  select(HMDB,Metabolite.B1,Metabolite.B2,degree.central.B1.rho.0.75,degree.central.B2.rho.0.75,
+         betweenness.B1.rho.0.75,betweenness.B2.rho.0.75,closeness.B1.rho.0.75,closeness.B2.rho.0.75)
+hilic.icms.network.stats.75.I <- inner_join(hilic.icms.network.stats.75.B1.I.temp2,hilic.icms.network.stats.75.B2.I.temp2,by = "HMDB") |>
+  select(HMDB,Metabolite.B1,Metabolite.B2,degree.central.B1.rho.0.75,degree.central.B2.rho.0.75,
+         betweenness.B1.rho.0.75,betweenness.B2.rho.0.75,closeness.B1.rho.0.75,closeness.B2.rho.0.75)
+hilic.icms.network.stats.9.H <- inner_join(hilic.icms.network.stats.9.B1.H.temp2,hilic.icms.network.stats.9.B2.H.temp2,by = "HMDB") |>
+  select(HMDB,Metabolite.B1,Metabolite.B2,degree.central.B1.rho.0.9,degree.central.B2.rho.0.9,
+         betweenness.B1.rho.0.9,betweenness.B2.rho.0.9,closeness.B1.rho.0.9,closeness.B2.rho.0.9)
+hilic.icms.network.stats.9.I <- inner_join(hilic.icms.network.stats.9.B1.I.temp2,hilic.icms.network.stats.9.B2.I.temp2,by = "HMDB") |>
+  select(HMDB,Metabolite.B1,Metabolite.B2,degree.central.B1.rho.0.9,degree.central.B2.rho.0.9,
+         betweenness.B1.rho.0.9,betweenness.B2.rho.0.9,closeness.B1.rho.0.9,closeness.B2.rho.0.9)
+
+
+hilic.icms.network.stats.5 <- rbind(hilic.icms.network.stats.5.H,hilic.icms.network.stats.5.I)
+hilic.icms.network.stats.75 <- rbind(hilic.icms.network.stats.75.H,hilic.icms.network.stats.75.I)
+hilic.icms.network.stats.9 <- rbind(hilic.icms.network.stats.9.H,hilic.icms.network.stats.9.I)
+
+hilic.icms.network.stats.5[is.na(hilic.icms.network.stats.5)] <- 0
+hilic.icms.network.stats.75[is.na(hilic.icms.network.stats.75)] <- 0
+hilic.icms.network.stats.9[is.na(hilic.icms.network.stats.9)] <- 0
+
+```
+
+
+```{r hilic_icms_heatmap, echo=FALSE, fig.width=10, fig.height=12, dpi=300}
+
+hilic.icms.network.stats.num.edges <- data.frame(
+  rho.0.5.B1 = hilic.icms.network.stats.5[,"degree.central.B1.rho.0.5"],
+  rho.0.75.B1 = hilic.icms.network.stats.75[,"degree.central.B1.rho.0.75"],
+  rho.0.9.B1 = hilic.icms.network.stats.9[,"degree.central.B1.rho.0.9"],
+  rho.0.5.B2 = hilic.icms.network.stats.5[,"degree.central.B2.rho.0.5"],
+  rho.0.75.B2 = hilic.icms.network.stats.75[,"degree.central.B2.rho.0.75"],
+  rho.0.9.B2 = hilic.icms.network.stats.9[,"degree.central.B2.rho.0.9"]
+)
+hilic.icms.network.stats.between <- data.frame(
+  rho.0.5.B1 = hilic.icms.network.stats.5[,"betweenness.B1.rho.0.5"],
+  rho.0.75.B1 = hilic.icms.network.stats.75[,"betweenness.B1.rho.0.75"],
+  rho.0.9.B1 = hilic.icms.network.stats.9[,"betweenness.B1.rho.0.9"],
+  rho.0.5.B2 = hilic.icms.network.stats.5[,"betweenness.B2.rho.0.5"],
+  rho.0.75.B2 = hilic.icms.network.stats.75[,"betweenness.B2.rho.0.75"],
+  rho.0.9.B2 = hilic.icms.network.stats.9[,"betweenness.B2.rho.0.9"]
+)
+hilic.icms.network.stats.close <- data.frame(
+  rho.0.5.B1 = hilic.icms.network.stats.5[,"closeness.B1.rho.0.5"],
+  rho.0.75.B1 = hilic.icms.network.stats.75[,"closeness.B1.rho.0.75"],
+  rho.0.9.B1 = hilic.icms.network.stats.9[,"closeness.B1.rho.0.9"],
+  rho.0.5.B2 = hilic.icms.network.stats.5[,"closeness.B2.rho.0.5"],
+  rho.0.75.B2 = hilic.icms.network.stats.75[,"closeness.B2.rho.0.75"],
+  rho.0.9.B2 = hilic.icms.network.stats.9[,"closeness.B2.rho.0.9"]
+)
+
+Batches_hilic_icms <- c(rep("B1",3),rep("B2",3))
+rho_str_hilic_icms <- rep(c(rho1,rho2,rho3),times=2)
+col_anno_hilic_icms <- data.frame(Batch = Batches_hilic_icms, Rho = rho_str_hilic_icms)
+ha_hilic_icms <- HeatmapAnnotation(df = col_anno_hilic_icms,
+                        col = list(Batch = c("B1" = "gray", "B2" = "orange"),
+                                   Rho = c("0.5" = "purple", "0.75" = "brown", "0.9" = "green")),
+                        show_legend = TRUE)
+
+row_anno_hilic_icms <- rowAnnotation(labels = anno_text(hilic.icms.network.stats.5$HMDB,
+                                                        gp = gpar(fontsize = 8),
+                                                        location = 0.5, just = "center"))
+
+rownames(col_anno_hilic_icms) <- colnames(hilic.icms.network.stats.num.edges)
+rownames(col_anno_hilic_icms) <- colnames(hilic.icms.network.stats.between)
+rownames(col_anno_hilic_icms) <- colnames(hilic.icms.network.stats.close)
+
+Heatmap(as.matrix(scale(hilic.icms.network.stats.num.edges)),
+        top_annotation = ha_hilic_icms,
+        right_annotation = row_anno_hilic_icms,
+        column_split = Batches_hilic_icms,
+        column_title = "HILIC & ICMS: Number of Edges (Scaled)",
+        column_title_gp = gpar(fontsize = 15),
+        row_names_gp = gpar(fontsize = 11),
+        cluster_columns = FALSE,
+        cluster_rows = TRUE,
+        show_column_names = FALSE,
+        show_row_dend = FALSE,
+        show_column_dend = FALSE,
+        heatmap_legend_param = list(title = "Score")
+        )
+
+Heatmap(as.matrix(scale(hilic.icms.network.stats.between)),
+        top_annotation = ha_hilic_icms,
+        right_annotation = row_anno_hilic_icms,
+        column_split = Batches_hilic_icms,
+        column_title = "HILIC & ICMS: Betweenness (Scaled)",
+        column_title_gp = gpar(fontsize = 15),
+        row_names_gp = gpar(fontsize = 11),
+        cluster_columns = FALSE,
+        cluster_rows = TRUE,
+        show_column_names = FALSE,
+        show_row_dend = FALSE,
+        show_column_dend = FALSE,
+        heatmap_legend_param = list(title = "Score")
+        )
+
+Heatmap(as.matrix(scale(hilic.icms.network.stats.close)),
+        top_annotation = ha_hilic_icms,
+        right_annotation = row_anno_hilic_icms,
+        column_split = Batches_hilic_icms,
+        column_title = "HILIC & ICMS: Closeness (Scaled)",
+        column_title_gp = gpar(fontsize = 15),
+        row_names_gp = gpar(fontsize = 11),
+        cluster_columns = FALSE,
+        cluster_rows = TRUE,
+        show_column_names = FALSE,
+        show_row_dend = FALSE,
+        show_column_dend = FALSE,
+        heatmap_legend_param = list(title = "Score")
+        )
+  
+
+
+```
+
+
+```{r hilic_icms_remove,echo=FALSE}
+
+remove(hilic.icms.network.stats.5.B1,hilic.icms.network.stats.75.B1,hilic.icms.network.stats.9.B1,
+       hilic.icms.network.stats.5.B2,hilic.icms.network.stats.75.B2,hilic.icms.network.stats.9.B2,
+       hilic.icms.network.stats.5.B1.H.temp,hilic.icms.network.stats.75.B1.H.temp,hilic.icms.network.stats.9.B1.H.temp,
+       hilic.icms.network.stats.5.B2.H.temp,hilic.icms.network.stats.75.B2.H.temp,hilic.icms.network.stats.9.B2.H.temp,
+       hilic.icms.network.stats.5.B1.I.temp,hilic.icms.network.stats.75.B1.I.temp,hilic.icms.network.stats.9.B1.I.temp,
+       hilic.icms.network.stats.5.B2.I.temp,hilic.icms.network.stats.75.B2.I.temp,hilic.icms.network.stats.9.B2.I.temp,
+       hilic.icms.network.stats.5.B1.H.temp2,hilic.icms.network.stats.75.B1.H.temp2,hilic.icms.network.stats.9.B1.H.temp2,
+       hilic.icms.network.stats.5.B2.H.temp2,hilic.icms.network.stats.75.B2.H.temp2,hilic.icms.network.stats.9.B2.H.temp2,
+       hilic.icms.network.stats.5.B1.I.temp2,hilic.icms.network.stats.75.B1.I.temp2,hilic.icms.network.stats.9.B1.I.temp2,
+       hilic.icms.network.stats.5.B2.I.temp2,hilic.icms.network.stats.75.B2.I.temp2,hilic.icms.network.stats.9.B2.I.temp2,
+       hilic.icms.network.stats.5.H,hilic.icms.network.stats.75.H,hilic.icms.network.stats.9.H,
+       hilic.icms.network.stats.5.I,hilic.icms.network.stats.75.I,hilic.icms.network.stats.9.I)
+
+```
+
+
+
+## Networks all proteins together (Protein, Phosphoprotein)
+
+
+
+```{r protein_pproteinnetwork, echo=FALSE, fig.width=8, fig.height=6}
+
+# combining datasets
+
+protein.pprotein.df.B1 <- cbind(protein.df.B1,pprotein.df.B1)
+protein.pprotein.df.B2 <- cbind(protein.df.B2,pprotein.df.B2)
+
+protein.pprotein.df.B1.s <- var(protein.pprotein.df.B1)
+protein.pprotein.df.B2.s <- var(protein.pprotein.df.B2)
+
+protein.pprotein.new.ann.B1 <- data.frame(Metabolite=colnames(protein.pprotein.df.B1),
+                                          New.Name=paste0(rep("PPP",dim(protein.pprotein.df.B1)[2]),1:dim(protein.pprotein.df.B1)[2]),
+                                          Type=rep(c("Protein","Phosphoprotein"),times=c(dim(protein.df.B1)[2],dim(pprotein.df.B1)[2])))
+protein.pprotein.new.ann.B2 <- data.frame(Metabolite=colnames(protein.pprotein.df.B2),
+                                          New.Name=paste0(rep("PPP",dim(protein.pprotein.df.B2)[2]),1:dim(protein.pprotein.df.B2)[2]),
+                                          Type=rep(c("Protein","Phosphoprotein"),times=c(dim(protein.df.B1)[2],dim(pprotein.df.B1)[2])))
+
+protein.pprotein.df.B1.a.1<-glasso(protein.pprotein.df.B1.s, rho=rho1p)
+protein.pprotein.df.B2.a.1<-glasso(protein.pprotein.df.B2.s, rho=rho1p)
+protein.pprotein.df.B1.a.25<-glasso(protein.pprotein.df.B1.s, rho=rho2p)
+protein.pprotein.df.B2.a.25<-glasso(protein.pprotein.df.B2.s, rho=rho2p)
+protein.pprotein.df.B1.a.4<-glasso(protein.pprotein.df.B1.s, rho=rho3p)
+protein.pprotein.df.B2.a.4<-glasso(protein.pprotein.df.B2.s, rho=rho3p)
+
+# Convert precision matrix to partial correlations
+protein.pprotein.partial.B1.1 <- partial.cor(protein.pprotein.df.B1.a.1$wi)
+protein.pprotein.partial.B2.1 <- partial.cor(protein.pprotein.df.B2.a.1$wi)
+protein.pprotein.partial.B1.25 <- partial.cor(protein.pprotein.df.B1.a.25$wi)
+protein.pprotein.partial.B2.25 <- partial.cor(protein.pprotein.df.B2.a.25$wi)
+protein.pprotein.partial.B1.4 <- partial.cor(protein.pprotein.df.B1.a.4$wi)
+protein.pprotein.partial.B2.4 <- partial.cor(protein.pprotein.df.B2.a.4$wi)
+
+# Threshold partial correlations
+thresh <- 1e-5  # Set your desired threshold
+protein.pprotein.partial.B1.1[abs(protein.pprotein.partial.B1.1) < thresh] <- 0
+protein.pprotein.partial.B2.1[abs(protein.pprotein.partial.B2.1) < thresh] <- 0
+protein.pprotein.partial.B1.25[abs(protein.pprotein.partial.B1.25) < thresh] <- 0
+protein.pprotein.partial.B2.25[abs(protein.pprotein.partial.B2.25) < thresh] <- 0
+protein.pprotein.partial.B1.4[abs(protein.pprotein.partial.B1.4) < thresh] <- 0
+protein.pprotein.partial.B2.4[abs(protein.pprotein.partial.B2.4) < thresh] <- 0
+
+diag(protein.pprotein.partial.B1.1) <- 0
+diag(protein.pprotein.partial.B2.1) <- 0
+diag(protein.pprotein.partial.B1.25) <- 0
+diag(protein.pprotein.partial.B2.25) <- 0
+diag(protein.pprotein.partial.B1.4) <- 0
+diag(protein.pprotein.partial.B2.4) <- 0
+
+
+# Identify and remove nodes with no remaining edges
+protein.pprotein.partial.B1.1.connected <- apply(protein.pprotein.partial.B1.1, 1, function(x) any(x != 0))
+protein.pprotein.partial.B1.1.filtered <- protein.pprotein.partial.B1.1[protein.pprotein.partial.B1.1.connected, protein.pprotein.partial.B1.1.connected]
+protein.pprotein.partial.B1.1.labels.filtered <- protein.pprotein.new.ann.B1$New.Name[protein.pprotein.partial.B1.1.connected]
+protein.pprotein.partial.B2.1.connected <- apply(protein.pprotein.partial.B2.1, 1, function(x) any(x != 0))
+protein.pprotein.partial.B2.1.filtered <- protein.pprotein.partial.B2.1[protein.pprotein.partial.B2.1.connected, protein.pprotein.partial.B2.1.connected]
+protein.pprotein.partial.B2.1.labels.filtered <- protein.pprotein.new.ann.B2$New.Name[protein.pprotein.partial.B2.1.connected]
+
+protein.pprotein.partial.B1.25.connected <- apply(protein.pprotein.partial.B1.25, 1, function(x) any(x != 0))
+protein.pprotein.partial.B1.25.filtered <- protein.pprotein.partial.B1.25[protein.pprotein.partial.B1.25.connected, protein.pprotein.partial.B1.25.connected]
+protein.pprotein.partial.B1.25.labels.filtered <- protein.pprotein.new.ann.B1$New.Name[protein.pprotein.partial.B1.25.connected]
+protein.pprotein.partial.B2.25.connected <- apply(protein.pprotein.partial.B2.25, 1, function(x) any(x != 0))
+protein.pprotein.partial.B2.25.filtered <- protein.pprotein.partial.B2.25[protein.pprotein.partial.B2.25.connected, protein.pprotein.partial.B2.25.connected]
+protein.pprotein.partial.B2.25.labels.filtered <- protein.pprotein.new.ann.B2$New.Name[protein.pprotein.partial.B2.25.connected]
+
+protein.pprotein.partial.B1.4.connected <- apply(protein.pprotein.partial.B1.4, 1, function(x) any(x != 0))
+protein.pprotein.partial.B1.4.filtered <- protein.pprotein.partial.B1.4[protein.pprotein.partial.B1.4.connected, protein.pprotein.partial.B1.4.connected]
+protein.pprotein.partial.B1.4.labels.filtered <- protein.pprotein.new.ann.B1$New.Name[protein.pprotein.partial.B1.4.connected]
+protein.pprotein.partial.B2.4.connected <- apply(protein.pprotein.partial.B2.4, 1, function(x) any(x != 0))
+protein.pprotein.partial.B2.4.filtered <- protein.pprotein.partial.B2.4[protein.pprotein.partial.B2.4.connected, protein.pprotein.partial.B2.4.connected]
+protein.pprotein.partial.B2.4.labels.filtered <- protein.pprotein.new.ann.B2$New.Name[protein.pprotein.partial.B2.4.connected]
+
+# rho=0.1
+layout(matrix(c(1, 2, 3), nrow = 1), widths = c(0.7, 0.7, 0.8))
+
+qgraph(protein.pprotein.partial.B1.1.filtered, labels = protein.pprotein.partial.B1.1.labels.filtered, arrows=FALSE,
+       diag=FALSE, label.cex=1.1, vsize=10,
+       layout="spring", title = paste0("PProtein/Protein (Batch 1), FDR<0.1, glasso rho=",rho1p),
+       nodeNames = protein.pprotein.new.ann.B1$Metabolite, legend=FALSE)
+qgraph(protein.pprotein.partial.B2.1.filtered, labels = protein.pprotein.partial.B2.1.labels.filtered, arrows=FALSE,
+       diag=FALSE, label.cex=1.1, vsize=10,
+       layout="spring", title = paste0("PProtein/Protein (Batch 2), FDR<0.1, glasso rho=",rho1p),
+       nodeNames = protein.pprotein.new.ann.B2$Metabolite, legend=FALSE)
+plot.new()
+legend("left", legend = paste0(protein.pprotein.new.ann.B1$New.Name,": ", protein.pprotein.new.ann.B2$Metabolite), cex = 0.7, bty = "n")
+
+# rho=0.25
+layout(matrix(c(1, 2, 3), nrow = 1), widths = c(0.7, 0.7, 0.8))
+
+qgraph(protein.pprotein.partial.B1.25.filtered, labels = protein.pprotein.partial.B1.25.labels.filtered, arrows=FALSE,
+       diag=FALSE, label.cex=1.1, vsize=10,
+       layout="spring", title = paste0("PProtein/Protein (Batch 1), FDR<0.1, glasso rho=",rho2p),
+       nodeNames = protein.pprotein.new.ann.B1$Metabolite, legend=FALSE)
+qgraph(protein.pprotein.partial.B2.25.filtered, labels = protein.pprotein.partial.B2.25.labels.filtered, arrows=FALSE,
+       diag=FALSE, label.cex=1.1, vsize=10,
+       layout="spring", title = paste0("PProtein/Protein (Batch 2), FDR<0.1, glasso rho=",rho2p),
+       nodeNames = protein.pprotein.new.ann.B2$Metabolite, legend=FALSE)
+plot.new()
+legend("left", legend = paste0(protein.pprotein.new.ann.B1$New.Name,": ", protein.pprotein.new.ann.B2$Metabolite), cex = 0.7, bty = "n")
+
+# rho=0.4
+layout(matrix(c(1, 2, 3), nrow = 1), widths = c(0.7, 0.7, 0.8))
+
+qgraph(protein.pprotein.partial.B1.4.filtered, labels = protein.pprotein.partial.B1.4.labels.filtered, arrows=FALSE,
+       diag=FALSE, label.cex=1.1, vsize=10,
+       layout="spring", title = paste0("PProtein/Protein (Batch 1), FDR<0.1, glasso rho=",rho3p),
+       nodeNames = protein.pprotein.new.ann.B1$Metabolite, legend=FALSE)
+qgraph(protein.pprotein.partial.B2.4.filtered, labels = protein.pprotein.partial.B2.4.labels.filtered, arrows=FALSE,
+       diag=FALSE, label.cex=1.1, vsize=10,
+       layout="spring", title = paste0("PProtein/Protein (Batch 2), FDR<0.1, glasso rho=",rho3p),
+       nodeNames = protein.pprotein.new.ann.B2$Metabolite, legend=FALSE)
+plot.new()
+legend("left", legend = paste0(protein.pprotein.new.ann.B1$New.Name,": ", protein.pprotein.new.ann.B2$Metabolite), cex = 0.7, bty = "n")
+
+
+# protein.pprotein.prec.B1.1 <- protein.pprotein.df.B1.a.1$wi
+# protein.pprotein.prec.B2.1 <- protein.pprotein.df.B2.a.1$wi
+# protein.pprotein.prec.B1.25 <- protein.pprotein.df.B1.a.25$wi
+# protein.pprotein.prec.B2.25 <- protein.pprotein.df.B2.a.25$wi
+# protein.pprotein.prec.B1.4 <- protein.pprotein.df.B1.a.4$wi
+# protein.pprotein.prec.B2.4 <- protein.pprotein.df.B2.a.4$wi
+
+# Convert to adjacency matrices (non-zero off-diagonal entries indicate edges)
+protein.pprotein.adj.B1.1 <- (abs(protein.pprotein.partial.B1.1) > 1e-5) * 1
+diag(protein.pprotein.adj.B1.1) <- 0
+protein.pprotein.adj.B2.1 <- (abs(protein.pprotein.partial.B2.1) > 1e-5) * 1
+diag(protein.pprotein.adj.B2.1) <- 0
+protein.pprotein.adj.B1.25 <- (abs(protein.pprotein.partial.B1.25) > 1e-5) * 1
+diag(protein.pprotein.adj.B1.25) <- 0
+protein.pprotein.adj.B2.25 <- (abs(protein.pprotein.partial.B2.25) > 1e-5) * 1
+diag(protein.pprotein.adj.B2.25) <- 0
+protein.pprotein.adj.B1.4 <- (abs(protein.pprotein.partial.B1.4) > 1e-5) * 1
+diag(protein.pprotein.adj.B1.4) <- 0
+protein.pprotein.adj.B2.4 <- (abs(protein.pprotein.partial.B2.4) > 1e-5) * 1
+diag(protein.pprotein.adj.B2.4) <- 0
+
+protein.pprotein.g.B1.1 <- graph_from_adjacency_matrix(protein.pprotein.adj.B1.1, mode = "undirected", diag = FALSE)
+protein.pprotein.g.B2.1 <- graph_from_adjacency_matrix(protein.pprotein.adj.B2.1, mode = "undirected", diag = FALSE)
+protein.pprotein.g.B1.25 <- graph_from_adjacency_matrix(protein.pprotein.adj.B1.25, mode = "undirected", diag = FALSE)
+protein.pprotein.g.B2.25 <- graph_from_adjacency_matrix(protein.pprotein.adj.B2.25, mode = "undirected", diag = FALSE)
+protein.pprotein.g.B1.4 <- graph_from_adjacency_matrix(protein.pprotein.adj.B1.4, mode = "undirected", diag = FALSE)
+protein.pprotein.g.B2.4 <- graph_from_adjacency_matrix(protein.pprotein.adj.B2.4, mode = "undirected", diag = FALSE)
+
+protein.pprotein.stats.B1.1 <- network_mean_stats(protein.pprotein.g.B1.1)
+protein.pprotein.stats.B2.1 <- network_mean_stats(protein.pprotein.g.B2.1)
+protein.pprotein.stats.B1.25 <- network_mean_stats(protein.pprotein.g.B1.25)
+protein.pprotein.stats.B2.25 <- network_mean_stats(protein.pprotein.g.B2.25)
+protein.pprotein.stats.B1.4 <- network_mean_stats(protein.pprotein.g.B1.4)
+protein.pprotein.stats.B2.4 <- network_mean_stats(protein.pprotein.g.B2.4)
+
+# Compare
+protein.pprotein.stats.comparison.1 <- data.frame(
+  Metric = names(protein.pprotein.stats.B1.1),
+  Batch1 = unlist(protein.pprotein.stats.B1.1),
+  Batch2 = unlist(protein.pprotein.stats.B2.1)
+)
+protein.pprotein.stats.comparison.25 <- data.frame(
+  Metric = names(protein.pprotein.stats.B1.25),
+  Batch1 = unlist(protein.pprotein.stats.B1.25),
+  Batch2 = unlist(protein.pprotein.stats.B2.25)
+)
+protein.pprotein.stats.comparison.4 <- data.frame(
+  Metric = names(protein.pprotein.stats.B1.4),
+  Batch1 = unlist(protein.pprotein.stats.B1.4),
+  Batch2 = unlist(protein.pprotein.stats.B2.4)
+)
+
+
+# Compare (Metabolite Level)
+protein.pprotein.network.stats.1.B1 <- data.frame(Gene.B1=colnames(protein.pprotein.df.B1),
+                                   degree.central.B1.rho.0.1=degree(protein.pprotein.g.B1.1),
+                                   betweenness.B1.rho.0.1=betweenness(protein.pprotein.g.B1.1),
+                                   closeness.B1.rho.0.1=closeness(protein.pprotein.g.B1.1),
+                                   Type=rep(c("Protein","PProtein"),times=c(dim(protein.df.B1)[2],dim(pprotein.df.B1)[2]))
+                                   )
+protein.pprotein.network.stats.1.B2 <- data.frame(Gene.B2=colnames(protein.pprotein.df.B2),
+                                   degree.central.B2.rho.0.1=degree(protein.pprotein.g.B2.1),
+                                   betweenness.B2.rho.0.1=betweenness(protein.pprotein.g.B2.1),
+                                   closeness.B2.rho.0.1=closeness(protein.pprotein.g.B2.1),
+                                   Type=rep(c("Protein","PProtein"),times=c(dim(protein.df.B1)[2],dim(pprotein.df.B1)[2]))
+                                   )
+protein.pprotein.network.stats.25.B1 <- data.frame(Gene.B1=colnames(protein.pprotein.df.B1),
+                                   degree.central.B1.rho.0.25=degree(protein.pprotein.g.B1.25),
+                                   betweenness.B1.rho.0.25=betweenness(protein.pprotein.g.B1.25),
+                                   closeness.B1.rho.0.25=closeness(protein.pprotein.g.B1.25),
+                                   Type=rep(c("Protein","PProtein"),times=c(dim(protein.df.B1)[2],dim(pprotein.df.B1)[2]))
+                                   )
+protein.pprotein.network.stats.25.B2 <- data.frame(Gene.B2=colnames(protein.pprotein.df.B2),
+                                   degree.central.B2.rho.0.25=degree(protein.pprotein.g.B2.25),
+                                   betweenness.B2.rho.0.25=betweenness(protein.pprotein.g.B2.25),
+                                   closeness.B2.rho.0.25=closeness(protein.pprotein.g.B2.25),
+                                   Type=rep(c("Protein","PProtein"),times=c(dim(protein.df.B1)[2],dim(pprotein.df.B1)[2]))
+                                   )
+protein.pprotein.network.stats.4.B1 <- data.frame(Gene.B1=colnames(protein.pprotein.df.B1),
+                                   degree.central.B1.rho.0.4=degree(protein.pprotein.g.B1.4),
+                                   betweenness.B1.rho.0.4=betweenness(protein.pprotein.g.B1.4),
+                                   closeness.B1.rho.0.4=closeness(protein.pprotein.g.B1.4),
+                                   Type=rep(c("Protein","PProtein"),times=c(dim(protein.df.B1)[2],dim(pprotein.df.B1)[2]))
+                                   )
+protein.pprotein.network.stats.4.B2 <- data.frame(Gene.B2=colnames(protein.pprotein.df.B2),
+                                   degree.central.B2.rho.0.4=degree(protein.pprotein.g.B2.4),
+                                   betweenness.B2.rho.0.4=betweenness(protein.pprotein.g.B2.4),
+                                   closeness.B2.rho.0.4=closeness(protein.pprotein.g.B2.4),
+                                   Type=rep(c("Protein","PProtein"),times=c(dim(protein.df.B1)[2],dim(pprotein.df.B1)[2]))
+                                   )
+
+
+protein.pprotein.network.stats.1 <- inner_join(protein.pprotein.network.stats.1.B1,protein.pprotein.network.stats.1.B2,
+                                                 by=c("Gene.B1" = "Gene.B2")) |>
+  select(Gene=Gene.B1,degree.central.B1.rho.0.1,degree.central.B2.rho.0.1,betweenness.B1.rho.0.1,betweenness.B2.rho.0.1,
+         closeness.B1.rho.0.1,closeness.B2.rho.0.1,Type=Type.y)
+protein.pprotein.network.stats.25 <- inner_join(protein.pprotein.network.stats.25.B1,protein.pprotein.network.stats.25.B2,
+                                                 by=c("Gene.B1" = "Gene.B2")) |>
+  select(Gene=Gene.B1,degree.central.B1.rho.0.25,degree.central.B2.rho.0.25,betweenness.B1.rho.0.25,betweenness.B2.rho.0.25,
+         closeness.B1.rho.0.25,closeness.B2.rho.0.25,Type=Type.y)
+protein.pprotein.network.stats.4 <- inner_join(protein.pprotein.network.stats.4.B1,protein.pprotein.network.stats.4.B2,
+                                                 by=c("Gene.B1" = "Gene.B2")) |>
+  select(Gene=Gene.B1,degree.central.B1.rho.0.4,degree.central.B2.rho.0.4,betweenness.B1.rho.0.4,betweenness.B2.rho.0.4,
+         closeness.B1.rho.0.4,closeness.B2.rho.0.4,Type=Type.y)
+```
+
+
+```{r protein_pprotein_plots, echo=FALSE, fig.width=6, fig.height=4}
+
+
+protein.pprotein.stats.comparison.num.edges <- data.frame(Batch=rep(c("Batch1","Batch2"),each=3),
+                                              rho=rep(c(0.1,0.25,0.4),times=2),
+                                              num_edges=rbind(protein.pprotein.stats.comparison.1["num_edges","Batch1"],
+                                                              protein.pprotein.stats.comparison.25["num_edges","Batch1"],
+                                                              protein.pprotein.stats.comparison.4["num_edges","Batch1"],
+                                                              protein.pprotein.stats.comparison.1["num_edges","Batch2"],
+                                                              protein.pprotein.stats.comparison.25["num_edges","Batch2"],
+                                                              protein.pprotein.stats.comparison.4["num_edges","Batch2"])
+)
+protein.pprotein.stats.comparison.density <- data.frame(Batch=rep(c("Batch1","Batch2"),each=3),
+                                              rho=rep(c(0.1,0.25,0.4),times=2),
+                                              density=rbind(protein.pprotein.stats.comparison.1["density","Batch1"],
+                                                              protein.pprotein.stats.comparison.25["density","Batch1"],
+                                                              protein.pprotein.stats.comparison.4["density","Batch1"],
+                                                              protein.pprotein.stats.comparison.1["density","Batch2"],
+                                                              protein.pprotein.stats.comparison.25["density","Batch2"],
+                                                              protein.pprotein.stats.comparison.4["density","Batch2"])
+)
+protein.pprotein.stats.comparison.clust.coeff <- data.frame(Batch=rep(c("Batch1","Batch2"),each=3),
+                                              rho=rep(c(0.1,0.25,0.4),times=2),
+                                              clustering_coeff=rbind(protein.pprotein.stats.comparison.1["clustering_coeff","Batch1"],
+                                                              protein.pprotein.stats.comparison.25["clustering_coeff","Batch1"],
+                                                              protein.pprotein.stats.comparison.4["clustering_coeff","Batch1"],
+                                                              protein.pprotein.stats.comparison.1["clustering_coeff","Batch2"],
+                                                              protein.pprotein.stats.comparison.25["clustering_coeff","Batch2"],
+                                                              protein.pprotein.stats.comparison.4["clustering_coeff","Batch2"])
+)
+protein.pprotein.stats.comparison.degree.cent <- data.frame(Batch=rep(c("Batch1","Batch2"),each=3),
+                                              rho=rep(c(0.1,0.25,0.4),times=2),
+                                              degree_centrality=rbind(protein.pprotein.stats.comparison.1["degree_centrality","Batch1"],
+                                                              protein.pprotein.stats.comparison.25["degree_centrality","Batch1"],
+                                                              protein.pprotein.stats.comparison.4["degree_centrality","Batch1"],
+                                                              protein.pprotein.stats.comparison.1["degree_centrality","Batch2"],
+                                                              protein.pprotein.stats.comparison.25["degree_centrality","Batch2"],
+                                                              protein.pprotein.stats.comparison.4["degree_centrality","Batch2"])
+)
+protein.pprotein.stats.comparison.between.cent <- data.frame(Batch=rep(c("Batch1","Batch2"),each=3),
+                                              rho=rep(c(0.1,0.25,0.4),times=2),
+                                              betweenness_centrality=rbind(
+                                                protein.pprotein.stats.comparison.1["betweenness_centrality","Batch1"],
+                                                              protein.pprotein.stats.comparison.25["betweenness_centrality","Batch1"],
+                                                              protein.pprotein.stats.comparison.4["betweenness_centrality","Batch1"],
+                                                              protein.pprotein.stats.comparison.1["betweenness_centrality","Batch2"],
+                                                              protein.pprotein.stats.comparison.25["betweenness_centrality","Batch2"],
+                                                              protein.pprotein.stats.comparison.4["betweenness_centrality","Batch2"])
+)
+
+ggplot(protein.pprotein.stats.comparison.num.edges,aes(x=rho,y=num_edges,color=Batch)) +
+  geom_point(size=2) +
+  geom_line() +
+  labs(y = "Number of Edges") +
+  ggtitle("Protein & PProtein: Batch Comparison - Number of Edges") +
+  theme_minimal()
+ggplot(protein.pprotein.stats.comparison.density,aes(x=rho,y=density,color=Batch)) +
+  geom_point(size=2) +
+  geom_line() +
+  labs(y = "Density") +
+  ggtitle("Protein & PProtein: Batch Comparison - Density") +
+  theme_minimal()
+ggplot(protein.pprotein.stats.comparison.clust.coeff,aes(x=rho,y=clustering_coeff,color=Batch)) +
+  geom_point(size=2) +
+  geom_line() +
+  labs(y = "Clustering Coefficient") +
+  ggtitle("Protein & PProtein: Batch Comparison - Clustering Coefficient") +
+  theme_minimal()
+ggplot(protein.pprotein.stats.comparison.degree.cent,aes(x=rho,y=degree_centrality,color=Batch)) +
+  geom_point(size=2) +
+  geom_line() +
+  labs(y = "Degree Centrality") +
+  ggtitle("Protein & PProtein: Batch Comparison - Degree Centrality") +
+  theme_minimal()
+ggplot(protein.pprotein.stats.comparison.between.cent,aes(x=rho,y=betweenness_centrality,color=Batch)) +
+  geom_point(size=2) +
+  geom_line() +
+  labs(y = "Betweenness Centrality") +
+  ggtitle("Protein & PProtein: Batch Comparison - Betweenness Centrality") +
+  theme_minimal()
+
+
+```
+
+
+```{r protein_pprotein_heatmap, echo=FALSE, fig.width=8, fig.height=4}
+
+protein.pprotein.network.stats.num.edges <- data.frame(
+  rho.0.1.B1 = protein.pprotein.network.stats.1[,"degree.central.B1.rho.0.1"],
+  rho.0.25.B1 = protein.pprotein.network.stats.25[,"degree.central.B1.rho.0.25"],
+  rho.0.4.B1 = protein.pprotein.network.stats.4[,"degree.central.B1.rho.0.4"],
+  rho.0.1.B2 = protein.pprotein.network.stats.1[,"degree.central.B2.rho.0.1"],
+  rho.0.25.B2 = protein.pprotein.network.stats.25[,"degree.central.B2.rho.0.25"],
+  rho.0.4.B2 = protein.pprotein.network.stats.4[,"degree.central.B2.rho.0.4"]
+)
+rownames(protein.pprotein.network.stats.num.edges) <- protein.pprotein.network.stats.1$Gene
+
+protein.pprotein.network.stats.between <- data.frame(
+  rho.0.1.B1 = protein.pprotein.network.stats.1[,"betweenness.B1.rho.0.1"],
+  rho.0.25.B1 = protein.pprotein.network.stats.25[,"betweenness.B1.rho.0.25"],
+  rho.0.4.B1 = protein.pprotein.network.stats.4[,"betweenness.B1.rho.0.4"],
+  rho.0.1.B2 = protein.pprotein.network.stats.1[,"betweenness.B2.rho.0.1"],
+  rho.0.25.B2 = protein.pprotein.network.stats.25[,"betweenness.B2.rho.0.25"],
+  rho.0.4.B2 = protein.pprotein.network.stats.4[,"betweenness.B2.rho.0.4"]
+)
+rownames(protein.pprotein.network.stats.between) <- protein.pprotein.network.stats.1$Gene
+
+protein.pprotein.network.stats.close <- data.frame(
+  rho.0.1.B1 = protein.pprotein.network.stats.1[,"closeness.B1.rho.0.1"],
+  rho.0.25.B1 = protein.pprotein.network.stats.25[,"closeness.B1.rho.0.25"],
+  rho.0.4.B1 = protein.pprotein.network.stats.4[,"closeness.B1.rho.0.4"],
+  rho.0.1.B2 = protein.pprotein.network.stats.1[,"closeness.B2.rho.0.1"],
+  rho.0.25.B2 = protein.pprotein.network.stats.25[,"closeness.B2.rho.0.25"],
+  rho.0.4.B2 = protein.pprotein.network.stats.4[,"closeness.B2.rho.0.4"]
+)
+rownames(protein.pprotein.network.stats.close) <- protein.pprotein.network.stats.1$Gene
+
+Batches_protein_pprotein <- c(rep("B1",3),rep("B2",3))
+rho_str_protein_pprotein <- rep(c(rho1p,rho2p,rho3p),times=2)
+col_anno_protein_pprotein <- data.frame(Batch = Batches_protein_pprotein, Rho = rho_str_protein_pprotein)
+ha_protein_pprotein <- HeatmapAnnotation(df = col_anno_protein_pprotein,
+                        col = list(Batch = c("B1" = "gray", "B2" = "orange"),
+                                   Rho = c("0.1" = "purple", "0.25" = "brown", "0.4" = "green")),
+                        show_legend = TRUE)
+
+rownames(col_anno_protein_pprotein) <- colnames(protein.pprotein.network.stats.num.edges)
+rownames(col_anno_protein_pprotein) <- colnames(protein.pprotein.network.stats.between)
+rownames(col_anno_protein_pprotein) <- colnames(protein.pprotein.network.stats.close)
+
+Heatmap(as.matrix(scale(protein.pprotein.network.stats.num.edges)),
+        top_annotation = ha_protein_pprotein,
+        column_split = Batches_protein_pprotein,
+        column_title = "Protein & PProtein: Number of Edges (Scaled)",
+        column_title_gp = gpar(fontsize = 15),
+        row_names_gp = gpar(fontsize = 7),
+        cluster_columns = FALSE,
+        cluster_rows = TRUE,
+        show_column_names = FALSE,
+        show_row_dend = FALSE,
+        show_column_dend = FALSE,
+        heatmap_legend_param = list(title = "Score")
+        )
+
+Heatmap(as.matrix(scale(protein.pprotein.network.stats.between)),
+        top_annotation = ha_protein_pprotein,
+        column_split = Batches_protein_pprotein,
+        column_title = "Protein & PProtein: Betweenness (Scaled)",
+        column_title_gp = gpar(fontsize = 15),
+        row_names_gp = gpar(fontsize = 7),
+        cluster_columns = FALSE,
+        cluster_rows = TRUE,
+        show_column_names = FALSE,
+        show_row_dend = FALSE,
+        show_column_dend = FALSE,
+        heatmap_legend_param = list(title = "Score")
+        )
+
+Heatmap(as.matrix(scale(protein.pprotein.network.stats.close)),
+        top_annotation = ha_protein_pprotein,
+        column_split = Batches_protein_pprotein,
+        column_title = "Protein & PProtein: Closeness (Scaled)",
+        column_title_gp = gpar(fontsize = 15),
+        row_names_gp = gpar(fontsize = 7),
+        cluster_columns = FALSE,
+        cluster_rows = TRUE,
+        show_column_names = FALSE,
+        show_row_dend = FALSE,
+        show_column_dend = FALSE,
+        heatmap_legend_param = list(title = "Score")
+        )
+
+```
+
+
+
+```{r allnetwork, echo=FALSE, fig.width=8, fig.height=6}
+
+# all.df.B1 <- cbind(hilic.icms.df.B1,protein.pprotein.df.B1)
+# all.df.B2 <- cbind(hilic.icms.df.B2,protein.pprotein.df.B2)
+# 
+# all.df.B1.s <- var(all.df.B1)
+# all.df.B2.s <- var(all.df.B2)
+# 
+# all.new.ann.B1 <- data.frame(Metabolite=colnames(all.df.B1), New.Name=paste0(rep("A",dim(all.df.B1)[2]),1:dim(all.df.B1)[2]),
+#                              Type=rep(c("HILIC","ICMS","Protein","Phosphoprotein"),
+#                                       times=c(dim(hilic.df.B1)[2],dim(icms.df.B1)[2],dim(protein.df.B1)[2],dim(pprotein.df.B1)[2])))
+# all.new.ann.B2 <- data.frame(Metabolite=colnames(all.df.B2), New.Name=paste0(rep("A",dim(all.df.B2)[2]),1:dim(all.df.B2)[2]),
+#                              Type=rep(c("HILIC","ICMS","Protein","Phosphoprotein"),
+#                                       times=c(dim(hilic.df.B1)[2],dim(icms.df.B1)[2],dim(protein.df.B1)[2],dim(pprotein.df.B1)[2])))
+# 
+# 
+# all.df.B1.a.5<-glasso(all.df.B1.s, rho=rho1)
+# all.df.B2.a.5<-glasso(all.df.B2.s, rho=rho1)
+# all.df.B1.a.75<-glasso(all.df.B1.s, rho=rho2)
+# all.df.B2.a.75<-glasso(all.df.B2.s, rho=rho2)
+# all.df.B1.a.9<-glasso(all.df.B1.s, rho=rho3)
+# all.df.B2.a.9<-glasso(all.df.B2.s, rho=rho3)
+# 
+# qgraph(all.df.B1.a.5$wi, labels = all.new.ann.B1$New.Name, arrows=FALSE, diag=FALSE, label.cex=1.1, vsize=3.5,
+#        layout="spring", title = paste0("All data (Batch 1), FDR<0.1, glasso rho=",rho1))
+# qgraph(all.df.B2.a.5$wi, labels = all.new.ann.B2$New.Name, arrows=FALSE, diag=FALSE, label.cex=1.1, vsize=3.5,
+#        layout="spring", title = paste0("All data (Batch 2), FDR<0.1, glasso rho=",rho1))
+# qgraph(all.df.B1.a.75$wi, labels = all.new.ann.B1$New.Name, arrows=FALSE, diag=FALSE, label.cex=1.1, vsize=3.5,
+#        layout="spring", title = paste0("All data (Batch 1), FDR<0.1, glasso rho=",rho2))
+# qgraph(all.df.B2.a.75$wi, labels = all.new.ann.B2$New.Name, arrows=FALSE, diag=FALSE, label.cex=1.1, vsize=3.5,
+#        layout="spring", title = paste0("All data (Batch 2), FDR<0.1, glasso rho=",rho2))
+# qgraph(all.df.B1.a.9$wi, labels = all.new.ann.B1$New.Name, arrows=FALSE, diag=FALSE, label.cex=1.1, vsize=3.5,
+#        layout="spring", title = paste0("All data (Batch 1), FDR<0.1, glasso rho=",rho3))
+# qgraph(all.df.B2.a.9$wi, labels = all.new.ann.B2$New.Name, arrows=FALSE, diag=FALSE, label.cex=1.1, vsize=3.5,
+#        layout="spring", title = paste0("All data (Batch 2), FDR<0.1, glasso rho=",rho3))
+# 
+# 
+# all.prec.B1.5 <- all.df.B1.a.5$wi
+# all.prec.B2.5 <- all.df.B2.a.5$wi
+# all.prec.B1.75 <- all.df.B1.a.75$wi
+# all.prec.B2.75 <- all.df.B2.a.75$wi
+# all.prec.B1.9 <- all.df.B1.a.9$wi
+# all.prec.B2.9 <- all.df.B2.a.9$wi
+# 
+# # Convert to adjacency matrices (non-zero off-diagonal entries indicate edges)
+# all.adj.B1.5 <- (abs(all.prec.B1.5) > 1e-5) * 1
+# diag(all.adj.B1.5) <- 0
+# all.adj.B2.5 <- (abs(all.prec.B2.5) > 1e-5) * 1
+# diag(all.adj.B2.5) <- 0
+# all.adj.B1.75 <- (abs(all.prec.B1.75) > 1e-5) * 1
+# diag(all.adj.B1.75) <- 0
+# all.adj.B2.75 <- (abs(all.prec.B2.75) > 1e-5) * 1
+# diag(all.adj.B2.75) <- 0
+# all.adj.B1.9 <- (abs(all.prec.B1.9) > 1e-5) * 1
+# diag(all.adj.B1.9) <- 0
+# all.adj.B2.9 <- (abs(all.prec.B2.9) > 1e-5) * 1
+# diag(all.adj.B2.9) <- 0
+# 
+# all.g.B1.5 <- graph_from_adjacency_matrix(all.adj.B1.5, mode = "undirected", diag = FALSE)
+# all.g.B2.5 <- graph_from_adjacency_matrix(all.adj.B2.5, mode = "undirected", diag = FALSE)
+# all.g.B1.75 <- graph_from_adjacency_matrix(all.adj.B1.75, mode = "undirected", diag = FALSE)
+# all.g.B2.75 <- graph_from_adjacency_matrix(all.adj.B2.75, mode = "undirected", diag = FALSE)
+# all.g.B1.9 <- graph_from_adjacency_matrix(all.adj.B1.9, mode = "undirected", diag = FALSE)
+# all.g.B2.9 <- graph_from_adjacency_matrix(all.adj.B2.9, mode = "undirected", diag = FALSE)
+# 
+# all.stats.B1.5 <- network_mean_stats(all.g.B1.5)
+# all.stats.B2.5 <- network_mean_stats(all.g.B2.5)
+# all.stats.B1.75 <- network_mean_stats(all.g.B1.75)
+# all.stats.B2.75 <- network_mean_stats(all.g.B2.75)
+# all.stats.B1.9 <- network_mean_stats(all.g.B1.9)
+# all.stats.B2.9 <- network_mean_stats(all.g.B2.9)
+# 
+# # Compare
+# all.stats.comparison.5 <- data.frame(
+#   Metric = names(all.stats.B1.5),
+#   Batch1 = unlist(all.stats.B1.5),
+#   Batch2 = unlist(all.stats.B2.5)
+# )
+# all.stats.comparison.75 <- data.frame(
+#   Metric = names(all.stats.B1.75),
+#   Batch1 = unlist(all.stats.B1.75),
+#   Batch2 = unlist(all.stats.B2.75)
+# )
+# all.stats.comparison.9 <- data.frame(
+#   Metric = names(all.stats.B1.9),
+#   Batch1 = unlist(all.stats.B1.9),
+#   Batch2 = unlist(all.stats.B2.9)
+# )
+# 
+# 
+# # Compare (Metabolite Level)
+# all.network.stats.5.B1 <- data.frame(Metabolite.B1=colnames(all.df.B1),
+#                                    degree.central.B1.rho.0.5=degree(all.g.B1.5),
+#                                    betweenness.B1.rho.0.5=betweenness(all.g.B1.5),
+#                                    closeness.B1.rho.0.5=closeness(all.g.B1.5),
+#                                    Type=rep(c("HILIC","ICMS","Protein","Phosphoprotein"),
+#                                       times=c(dim(hilic.df.B1)[2],dim(icms.df.B1)[2],dim(protein.df.B1)[2],dim(pprotein.df.B1)[2]))
+#                                    )
+# all.network.stats.5.B2 <- data.frame(Metabolite.B2=colnames(all.df.B2),
+#                                    degree.central.B2.rho.0.5=degree(all.g.B2.5),
+#                                    betweenness.B2.rho.0.5=betweenness(all.g.B2.5),
+#                                    closeness.B2.rho.0.5=closeness(all.g.B2.5),
+#                                    Type=rep(c("HILIC","ICMS","Protein","Phosphoprotein"),
+#                                       times=c(dim(hilic.df.B1)[2],dim(icms.df.B1)[2],dim(protein.df.B1)[2],dim(pprotein.df.B1)[2]))
+#                                    )
+# all.network.stats.75.B1 <- data.frame(Metabolite.B1=colnames(all.df.B1),
+#                                    degree.central.B1.rho.0.75=degree(all.g.B1.75),
+#                                    betweenness.B1.rho.0.75=betweenness(all.g.B1.75),
+#                                    closeness.B1.rho.0.75=closeness(all.g.B1.75),
+#                                    Type=rep(c("HILIC","ICMS","Protein","Phosphoprotein"),
+#                                       times=c(dim(hilic.df.B1)[2],dim(icms.df.B1)[2],dim(protein.df.B1)[2],dim(pprotein.df.B1)[2]))
+#                                    )
+# all.network.stats.75.B2 <- data.frame(Metabolite.B2=colnames(all.df.B2),
+#                                    degree.central.B2.rho.0.75=degree(all.g.B2.75),
+#                                    betweenness.B2.rho.0.75=betweenness(all.g.B2.75),
+#                                    closeness.B2.rho.0.75=closeness(all.g.B2.75),
+#                                    Type=rep(c("HILIC","ICMS","Protein","Phosphoprotein"),
+#                                       times=c(dim(hilic.df.B1)[2],dim(icms.df.B1)[2],dim(protein.df.B1)[2],dim(pprotein.df.B1)[2]))
+#                                    )
+# all.network.stats.9.B1 <- data.frame(Metabolite.B1=colnames(all.df.B1),
+#                                    degree.central.B1.rho.0.9=degree(all.g.B1.9),
+#                                    betweenness.B1.rho.0.9=betweenness(all.g.B1.9),
+#                                    closeness.B1.rho.0.9=closeness(all.g.B1.9),
+#                                    Type=rep(c("HILIC","ICMS","Protein","Phosphoprotein"),
+#                                       times=c(dim(hilic.df.B1)[2],dim(icms.df.B1)[2],dim(protein.df.B1)[2],dim(pprotein.df.B1)[2]))
+#                                    )
+# all.network.stats.9.B2 <- data.frame(Metabolite.B2=colnames(all.df.B2),
+#                                    degree.central.B2.rho.0.9=degree(all.g.B2.9),
+#                                    betweenness.B2.rho.0.9=betweenness(all.g.B2.9),
+#                                    closeness.B2.rho.0.9=closeness(all.g.B2.9),
+#                                    Type=rep(c("HILIC","ICMS","Protein","Phosphoprotein"),
+#                                       times=c(dim(hilic.df.B1)[2],dim(icms.df.B1)[2],dim(protein.df.B1)[2],dim(pprotein.df.B1)[2]))
+#                                    )
+# 
+# all.network.stats.5.B1.H.temp <- all.network.stats.5.B1 |> filter(Type == "HILIC")
+# all.network.stats.5.B1.I.temp <- all.network.stats.5.B1 |> filter(Type == "ICMS")
+# all.network.stats.5.B1.P.temp <- all.network.stats.5.B1 |> filter(Type == "Protein" | Type == "Phosphoprotein")
+# all.network.stats.5.B2.H.temp <- all.network.stats.5.B2 |> filter(Type == "HILIC")
+# all.network.stats.5.B2.I.temp <- all.network.stats.5.B2 |> filter(Type == "ICMS")
+# all.network.stats.5.B2.P.temp <- all.network.stats.5.B2 |> filter(Type == "Protein" | Type == "Phosphoprotein")
+# all.network.stats.75.B1.H.temp <- all.network.stats.75.B1 |> filter(Type == "HILIC")
+# all.network.stats.75.B1.I.temp <- all.network.stats.75.B1 |> filter(Type == "ICMS")
+# all.network.stats.75.B1.P.temp <- all.network.stats.75.B1 |> filter(Type == "Protein" | Type == "Phosphoprotein")
+# all.network.stats.75.B2.H.temp <- all.network.stats.75.B2 |> filter(Type == "HILIC")
+# all.network.stats.75.B2.I.temp <- all.network.stats.75.B2 |> filter(Type == "ICMS")
+# all.network.stats.75.B2.P.temp <- all.network.stats.75.B2 |> filter(Type == "Protein" | Type == "Phosphoprotein")
+# all.network.stats.9.B1.H.temp <- all.network.stats.9.B1 |> filter(Type == "HILIC")
+# all.network.stats.9.B1.I.temp <- all.network.stats.9.B1 |> filter(Type == "ICMS")
+# all.network.stats.9.B1.P.temp <- all.network.stats.9.B1 |> filter(Type == "Protein" | Type == "Phosphoprotein")
+# all.network.stats.9.B2.H.temp <- all.network.stats.9.B2 |> filter(Type == "HILIC")
+# all.network.stats.9.B2.I.temp <- all.network.stats.9.B2 |> filter(Type == "ICMS")
+# all.network.stats.9.B2.P.temp <- all.network.stats.9.B2 |> filter(Type == "Protein" | Type == "Phosphoprotein")
+# 
+# 
+# all.network.stats.5.B1.H.temp2 <- inner_join(all.network.stats.5.B1.H.temp,targets.hilic,by = "Metabolite.B1") |>
+#   select(Metabolite.B1,degree.central.B1.rho.0.5,betweenness.B1.rho.0.5,closeness.B1.rho.0.5,HMDB,Type)
+# all.network.stats.5.B1.I.temp2 <- inner_join(all.network.stats.5.B1.I.temp,targets.icms,by = "Metabolite.B1") |>
+#   select(Metabolite.B1,degree.central.B1.rho.0.5,betweenness.B1.rho.0.5,closeness.B1.rho.0.5,HMDB,Type)
+# all.network.stats.5.B2.H.temp2 <- inner_join(all.network.stats.5.B2.H.temp,targets.hilic,by = "Metabolite.B2") |>
+#   select(Metabolite.B2,degree.central.B2.rho.0.5,betweenness.B2.rho.0.5,closeness.B2.rho.0.5,HMDB,Type)
+# all.network.stats.5.B2.I.temp2 <- inner_join(all.network.stats.5.B2.I.temp,targets.icms,by = "Metabolite.B2") |>
+#   select(Metabolite.B2,degree.central.B2.rho.0.5,betweenness.B2.rho.0.5,closeness.B2.rho.0.5,HMDB,Type)
+# 
+# all.network.stats.75.B1.H.temp2 <- inner_join(all.network.stats.75.B1.H.temp,targets.hilic,by = "Metabolite.B1") |>
+#   select(Metabolite.B1,degree.central.B1.rho.0.75,betweenness.B1.rho.0.75,closeness.B1.rho.0.75,HMDB,Type)
+# all.network.stats.75.B1.I.temp2 <- inner_join(all.network.stats.75.B1.I.temp,targets.icms,by = "Metabolite.B1") |>
+#   select(Metabolite.B1,degree.central.B1.rho.0.75,betweenness.B1.rho.0.75,closeness.B1.rho.0.75,HMDB,Type)
+# all.network.stats.75.B2.H.temp2 <- inner_join(all.network.stats.75.B2.H.temp,targets.hilic,by = "Metabolite.B2") |>
+#   select(Metabolite.B2,degree.central.B2.rho.0.75,betweenness.B2.rho.0.75,closeness.B2.rho.0.75,HMDB,Type)
+# all.network.stats.75.B2.I.temp2 <- inner_join(all.network.stats.75.B2.I.temp,targets.icms,by = "Metabolite.B2") |>
+#   select(Metabolite.B2,degree.central.B2.rho.0.75,betweenness.B2.rho.0.75,closeness.B2.rho.0.75,HMDB,Type)
+# 
+# all.network.stats.9.B1.H.temp2 <- inner_join(all.network.stats.9.B1.H.temp,targets.hilic,by = "Metabolite.B1") |>
+#   select(Metabolite.B1,degree.central.B1.rho.0.9,betweenness.B1.rho.0.9,closeness.B1.rho.0.9,HMDB,Type)
+# all.network.stats.9.B1.I.temp2 <- inner_join(all.network.stats.9.B1.I.temp,targets.icms,by = "Metabolite.B1") |>
+#   select(Metabolite.B1,degree.central.B1.rho.0.9,betweenness.B1.rho.0.9,closeness.B1.rho.0.9,HMDB,Type)
+# all.network.stats.9.B2.H.temp2 <- inner_join(all.network.stats.9.B2.H.temp,targets.hilic,by = "Metabolite.B2") |>
+#   select(Metabolite.B2,degree.central.B2.rho.0.9,betweenness.B2.rho.0.9,closeness.B2.rho.0.9,HMDB,Type)
+# all.network.stats.9.B2.I.temp2 <- inner_join(all.network.stats.9.B2.I.temp,targets.icms,by = "Metabolite.B2") |>
+#   select(Metabolite.B2,degree.central.B2.rho.0.9,betweenness.B2.rho.0.9,closeness.B2.rho.0.9,HMDB,Type)
+# 
+# 
+# all.network.stats.5.H <- inner_join(all.network.stats.5.B1.H.temp2,all.network.stats.5.B2.H.temp2,by = "HMDB") |>
+#   select(HMDB,Metabolite.B1,Metabolite.B2,degree.central.B1.rho.0.5,degree.central.B2.rho.0.5,
+#          betweenness.B1.rho.0.5,betweenness.B2.rho.0.5,closeness.B1.rho.0.5,closeness.B2.rho.0.5,Type=Type.y)
+# all.network.stats.5.I <- inner_join(all.network.stats.5.B1.I.temp2,all.network.stats.5.B2.I.temp2,by = "HMDB") |>
+#   select(HMDB,Metabolite.B1,Metabolite.B2,degree.central.B1.rho.0.5,degree.central.B2.rho.0.5,
+#          betweenness.B1.rho.0.5,betweenness.B2.rho.0.5,closeness.B1.rho.0.5,closeness.B2.rho.0.5,Type=Type.y)
+# all.network.stats.75.H <- inner_join(all.network.stats.75.B1.H.temp2,all.network.stats.75.B2.H.temp2,by = "HMDB") |>
+#   select(HMDB,Metabolite.B1,Metabolite.B2,degree.central.B1.rho.0.75,degree.central.B2.rho.0.75,
+#          betweenness.B1.rho.0.75,betweenness.B2.rho.0.75,closeness.B1.rho.0.75,closeness.B2.rho.0.75,Type=Type.y)
+# all.network.stats.75.I <- inner_join(all.network.stats.75.B1.I.temp2,all.network.stats.75.B2.I.temp2,by = "HMDB") |>
+#   select(HMDB,Metabolite.B1,Metabolite.B2,degree.central.B1.rho.0.75,degree.central.B2.rho.0.75,
+#          betweenness.B1.rho.0.75,betweenness.B2.rho.0.75,closeness.B1.rho.0.75,closeness.B2.rho.0.75,Type=Type.y)
+# all.network.stats.9.H <- inner_join(all.network.stats.9.B1.H.temp2,all.network.stats.9.B2.H.temp2,by = "HMDB") |>
+#   select(HMDB,Metabolite.B1,Metabolite.B2,degree.central.B1.rho.0.9,degree.central.B2.rho.0.9,
+#          betweenness.B1.rho.0.9,betweenness.B2.rho.0.9,closeness.B1.rho.0.9,closeness.B2.rho.0.9,Type=Type.y)
+# all.network.stats.9.I <- inner_join(all.network.stats.9.B1.I.temp2,all.network.stats.9.B2.I.temp2,by = "HMDB") |>
+#   select(HMDB,Metabolite.B1,Metabolite.B2,degree.central.B1.rho.0.9,degree.central.B2.rho.0.9,
+#          betweenness.B1.rho.0.9,betweenness.B2.rho.0.9,closeness.B1.rho.0.9,closeness.B2.rho.0.9,Type=Type.y)
+# 
+# 
+# all.network.stats.5.P <- inner_join(all.network.stats.5.B1.P.temp,all.network.stats.5.B2.P.temp,
+#                                     by=c("Metabolite.B1" = "Metabolite.B2")) |>
+#   mutate(HMDB=rep(NA,dim(all.network.stats.5.B1.P.temp)[1]),Metabolite.B2=Metabolite.B1) |>
+#   select(HMDB,Metabolite.B1,Metabolite.B2,degree.central.B1.rho.0.5,degree.central.B2.rho.0.5,betweenness.B1.rho.0.5,
+#          betweenness.B2.rho.0.5,closeness.B1.rho.0.5,closeness.B2.rho.0.5,Type=Type.y)
+# all.network.stats.75.P <- inner_join(all.network.stats.75.B1.P.temp,all.network.stats.75.B2.P.temp,
+#                                     by=c("Metabolite.B1" = "Metabolite.B2")) |>
+#   mutate(HMDB=rep(NA,dim(all.network.stats.75.B1.P.temp)[1]),Metabolite.B2=Metabolite.B1) |>
+#   select(HMDB,Metabolite.B1,Metabolite.B2,degree.central.B1.rho.0.75,degree.central.B2.rho.0.75,betweenness.B1.rho.0.75,
+#          betweenness.B2.rho.0.75,closeness.B1.rho.0.75,closeness.B2.rho.0.75,Type=Type.y)
+# all.network.stats.9.P <- inner_join(all.network.stats.9.B1.P.temp,all.network.stats.9.B2.P.temp,
+#                                     by=c("Metabolite.B1" = "Metabolite.B2")) |>
+#   mutate(HMDB=rep(NA,dim(all.network.stats.9.B1.P.temp)[1]),Metabolite.B2=Metabolite.B1) |>
+#   select(HMDB,Metabolite.B1,Metabolite.B2,degree.central.B1.rho.0.9,degree.central.B2.rho.0.9,betweenness.B1.rho.0.9,
+#          betweenness.B2.rho.0.9,closeness.B1.rho.0.9,closeness.B2.rho.0.9,Type=Type.y)
+# 
+# 
+# 
+# all.network.stats.5 <- rbind(all.network.stats.5.H,all.network.stats.5.I,all.network.stats.5.P)
+# all.network.stats.75 <- rbind(all.network.stats.75.H,all.network.stats.75.I,all.network.stats.75.P)
+# all.network.stats.9 <- rbind(all.network.stats.9.H,all.network.stats.9.I,all.network.stats.9.P)
+# 
+# 
+# 
+# remove(all.network.stats.5.B1,all.network.stats.75.B1,all.network.stats.9.B1,
+#        all.network.stats.5.B2,all.network.stats.75.B2,all.network.stats.9.B2,
+#        all.network.stats.5.B1.H.temp,all.network.stats.75.B1.H.temp,all.network.stats.9.B1.H.temp,
+#        all.network.stats.5.B2.H.temp,all.network.stats.75.B2.H.temp,all.network.stats.9.B2.H.temp,
+#        all.network.stats.5.B1.I.temp,all.network.stats.75.B1.I.temp,all.network.stats.9.B1.I.temp,
+#        all.network.stats.5.B2.I.temp,all.network.stats.75.B2.I.temp,all.network.stats.9.B2.I.temp,
+#        all.network.stats.5.B1.H.temp2,all.network.stats.75.B1.H.temp2,all.network.stats.9.B1.H.temp2,
+#        all.network.stats.5.B2.H.temp2,all.network.stats.75.B2.H.temp2,all.network.stats.9.B2.H.temp2,
+#        all.network.stats.5.B1.I.temp2,all.network.stats.75.B1.I.temp2,all.network.stats.9.B1.I.temp2,
+#        all.network.stats.5.B2.I.temp2,all.network.stats.75.B2.I.temp2,all.network.stats.9.B2.I.temp2,
+#        all.network.stats.5.H,all.network.stats.75.H,all.network.stats.9.H,
+#        all.network.stats.5.I,all.network.stats.75.I,all.network.stats.9.I,
+#        all.network.stats.5.P,all.network.stats.75.P,all.network.stats.9.P)
+
+
+
+```
+
+
+
+```{r ExcelOutput, echo=FALSE}
+
+
+tmp1<-list(icms.new.ann.B1.sorted, icms.new.ann.B2.sorted, hilic.new.ann.B1.sorted, hilic.new.ann.B2.sorted,
+           protein.new.ann.B1, protein.new.ann.B2, pprotein.new.ann.B1, pprotein.new.ann.B2,
+           hilic.icms.new.ann.B1, hilic.icms.new.ann.B2, protein.pprotein.new.ann.B1, protein.pprotein.new.ann.B2
+           # all.new.ann.B1, all.new.ann.B2
+           )
+
+names(tmp1)<-c("ICMS.Ann.Batch.1", "ICMS.Ann.Batch.2", "HILIC.Ann.Batch.1", "HILIC.Ann.Batch.2",
+               "Protein.Ann.Batch.1", "Protein.Ann.Batch.2", "Phospohprotein.Ann.Batch.1", "Phospohprotein.Ann.Batch.2",
+               "HILIC.ICMS.Ann.Batch.1", "HILIC.ICMS.Ann.Batch.2", "Protein.PProtein.Ann.Batch.1", "Protein.PProtein.Ann.Batch.2"
+               # "All.Data.Ann.Batch.1","All.Data.Ann.Batch.2"
+               )
+
+write.xlsx(tmp1, rowNames=FALSE, "W:/Health Services and Outcomes Research/BEC/Brooke Fridley/consult/Cheng.Nikki/R01 DCIS/results/Chase_Results/Network/DCIS_IDC_Network_Analysis_Annontations_CS.xlsx")
+
+
+
+tmp2<-list(icms.stats.comparison.5, icms.stats.comparison.75, icms.stats.comparison.9,
+           hilic.stats.comparison.5, hilic.stats.comparison.75, hilic.stats.comparison.9,
+           protein.stats.comparison.1, protein.stats.comparison.25, protein.stats.comparison.4,
+           pprotein.stats.comparison.1, pprotein.stats.comparison.25, pprotein.stats.comparison.4,
+           hilic.icms.stats.comparison.5, hilic.icms.stats.comparison.75, hilic.icms.stats.comparison.9,
+           protein.pprotein.stats.comparison.1, protein.pprotein.stats.comparison.25, protein.pprotein.stats.comparison.4
+           # all.stats.comparison.5, all.stats.comparison.75, all.stats.comparison.9
+           )
+
+names(tmp2)<-c("ICMS.Comp.rho.0.5", "ICMS.Comp.rho.0.75", "ICMS.Comp.rho.0.9",
+               "HILIC.Comp.rho.0.5", "HILIC.Comp.rho.0.75", "HILIC.Comp.rho.0.9",
+               "Protein.Comp.rho.0.1", "Protein.Comp.rho.0.25", "Protein.Comp.rho.0.4",
+               "Phosphoprotein.Comp.rho.0.1", "Phosphoprotein.Comp.rho.0.25", "Phosphoprotein.Comp.rho.0.4",
+               "HILIC.ICMS.Comp.rho.0.5", "HILIC.ICMS.Comp.rho.0.75", "HILIC.ICMS.Comp.rho.0.9",
+               "Protein.PProtein.Comp.rho.0.1", "Protein.PProtein.Comp.rho.0.25", "Protein.PProtein.Comp.rho.0.4"
+               # "ALL.Comp.rho.0.5", "ALL.Comp.rho.0.75", "ALL.Comp.rho.0.9"
+               )
+
+write.xlsx(tmp2, rowNames=FALSE, "W:/Health Services and Outcomes Research/BEC/Brooke Fridley/consult/Cheng.Nikki/R01 DCIS/results/Chase_Results/Network/DCIS_IDC_Network_Batch_Comparison_CS.xlsx")
+
+
+
+tmp3<-list(icms.network.stats.5, icms.network.stats.75, icms.network.stats.9,
+           hilic.network.stats.5, hilic.network.stats.75, hilic.network.stats.9,
+           protein.network.stats.1, protein.network.stats.25, protein.network.stats.4,
+           pprotein.network.stats.1, pprotein.network.stats.25, pprotein.network.stats.4,
+           hilic.icms.network.stats.5, hilic.icms.network.stats.75, hilic.icms.network.stats.9,
+           protein.pprotein.network.stats.1, protein.pprotein.network.stats.25, protein.pprotein.network.stats.4
+           # all.network.stats.5, all.network.stats.75, all.network.stats.9
+           )
+
+names(tmp3)<-c("ICMS.stat.rho.0.5", "ICMS.stat.rho.0.75", "ICMS.stat.rho.0.9",
+               "HILIC.stat.rho.0.5", "HILIC.stat.rho.0.75", "HILIC.stat.rho.0.9",
+               "Protein.stat.rho.0.1", "Protein.stat.rho.0.25", "Protein.stat.rho.0.4",
+               "Phosphoprotein.stat.rho.0.1", "Phosphoprotein.stat.rho.0.25", "Phosphoprotein.stat.rho.0.4",
+               "HILIC.ICMS.stat.rho.0.5", "HILIC.ICMS.stat.rho.0.75", "HILIC.ICMS.stat.rho.0.9",
+               "Protein.PProtein.stat.rho.0.1", "Protein.PProtein.stat.rho.0.25", "Protein.PProtein.stat.rho.0.4"
+               # "ALL.stat.rho.0.5", "ALL.stat.rho.0.75", "ALL.stat.rho.0.9"
+               )
+
+write.xlsx(tmp3, rowNames=FALSE, "W:/Health Services and Outcomes Research/BEC/Brooke Fridley/consult/Cheng.Nikki/R01 DCIS/results/Chase_Results/Network/DCIS_IDC_Network_Stat_Comparison_CS.xlsx")
+
+## Prepping partial correlations Excel sheet
+
+diag(icms.partial.B1.5) <- 1
+diag(icms.partial.B2.5) <- 1
+diag(icms.partial.B1.75) <- 1
+diag(icms.partial.B2.75) <- 1
+diag(icms.partial.B1.9) <- 1
+diag(icms.partial.B2.9) <- 1
+
+colnames(icms.partial.B1.5) <- colnames(icms.df.B1.sorted)
+rownames(icms.partial.B1.5) <- colnames(icms.df.B1.sorted)
+colnames(icms.partial.B2.5) <- colnames(icms.df.B2.sorted)
+rownames(icms.partial.B2.5) <- colnames(icms.df.B2.sorted)
+colnames(icms.partial.B1.75) <- colnames(icms.df.B1.sorted)
+rownames(icms.partial.B1.75) <- colnames(icms.df.B1.sorted)
+colnames(icms.partial.B2.75) <- colnames(icms.df.B2.sorted)
+rownames(icms.partial.B2.75) <- colnames(icms.df.B2.sorted)
+colnames(icms.partial.B1.9) <- colnames(icms.df.B1.sorted)
+rownames(icms.partial.B1.9) <- colnames(icms.df.B1.sorted)
+colnames(icms.partial.B2.9) <- colnames(icms.df.B2.sorted)
+rownames(icms.partial.B2.9) <- colnames(icms.df.B2.sorted)
+
+diag(hilic.partial.B1.5) <- 1
+diag(hilic.partial.B2.5) <- 1
+diag(hilic.partial.B1.75) <- 1
+diag(hilic.partial.B2.75) <- 1
+diag(hilic.partial.B1.9) <- 1
+diag(hilic.partial.B2.9) <- 1
+
+colnames(hilic.partial.B1.5) <- colnames(hilic.df.B1.sorted)
+rownames(hilic.partial.B1.5) <- colnames(hilic.df.B1.sorted)
+colnames(hilic.partial.B2.5) <- colnames(hilic.df.B2.sorted)
+rownames(hilic.partial.B2.5) <- colnames(hilic.df.B2.sorted)
+colnames(hilic.partial.B1.75) <- colnames(hilic.df.B1.sorted)
+rownames(hilic.partial.B1.75) <- colnames(hilic.df.B1.sorted)
+colnames(hilic.partial.B2.75) <- colnames(hilic.df.B2.sorted)
+rownames(hilic.partial.B2.75) <- colnames(hilic.df.B2.sorted)
+colnames(hilic.partial.B1.9) <- colnames(hilic.df.B1.sorted)
+rownames(hilic.partial.B1.9) <- colnames(hilic.df.B1.sorted)
+colnames(hilic.partial.B2.9) <- colnames(hilic.df.B2.sorted)
+rownames(hilic.partial.B2.9) <- colnames(hilic.df.B2.sorted)
+
+diag(protein.partial.B1.1) <- 1
+diag(protein.partial.B2.1) <- 1
+diag(protein.partial.B1.25) <- 1
+diag(protein.partial.B2.25) <- 1
+diag(protein.partial.B1.4) <- 1
+diag(protein.partial.B2.4) <- 1
+
+colnames(protein.partial.B1.1) <- colnames(protein.df.B1)
+rownames(protein.partial.B1.1) <- colnames(protein.df.B1)
+colnames(protein.partial.B2.1) <- colnames(protein.df.B2)
+rownames(protein.partial.B2.1) <- colnames(protein.df.B2)
+colnames(protein.partial.B1.25) <- colnames(protein.df.B1)
+rownames(protein.partial.B1.25) <- colnames(protein.df.B1)
+colnames(protein.partial.B2.25) <- colnames(protein.df.B2)
+rownames(protein.partial.B2.25) <- colnames(protein.df.B2)
+colnames(protein.partial.B1.4) <- colnames(protein.df.B1)
+rownames(protein.partial.B1.4) <- colnames(protein.df.B1)
+colnames(protein.partial.B2.4) <- colnames(protein.df.B2)
+rownames(protein.partial.B2.4) <- colnames(protein.df.B2)
+
+diag(pprotein.partial.B1.1) <- 1
+diag(pprotein.partial.B2.1) <- 1
+diag(pprotein.partial.B1.25) <- 1
+diag(pprotein.partial.B2.25) <- 1
+diag(pprotein.partial.B1.4) <- 1
+diag(pprotein.partial.B2.4) <- 1
+
+colnames(pprotein.partial.B1.1) <- colnames(pprotein.df.B1)
+rownames(pprotein.partial.B1.1) <- colnames(pprotein.df.B1)
+colnames(pprotein.partial.B2.1) <- colnames(pprotein.df.B2)
+rownames(pprotein.partial.B2.1) <- colnames(pprotein.df.B2)
+colnames(pprotein.partial.B1.25) <- colnames(pprotein.df.B1)
+rownames(pprotein.partial.B1.25) <- colnames(pprotein.df.B1)
+colnames(pprotein.partial.B2.25) <- colnames(pprotein.df.B2)
+rownames(pprotein.partial.B2.25) <- colnames(pprotein.df.B2)
+colnames(pprotein.partial.B1.4) <- colnames(pprotein.df.B1)
+rownames(pprotein.partial.B1.4) <- colnames(pprotein.df.B1)
+colnames(pprotein.partial.B2.4) <- colnames(pprotein.df.B2)
+rownames(pprotein.partial.B2.4) <- colnames(pprotein.df.B2)
+
+diag(hilic.icms.partial.B1.5) <- 1
+diag(hilic.icms.partial.B2.5) <- 1
+diag(hilic.icms.partial.B1.75) <- 1
+diag(hilic.icms.partial.B2.75) <- 1
+diag(hilic.icms.partial.B1.9) <- 1
+diag(hilic.icms.partial.B2.9) <- 1
+
+hilic.icms.df.B1.part.ann <- paste0(hilic.icms.new.ann.B1$HMDB,".",hilic.icms.new.ann.B1$Type)
+hilic.icms.df.B2.part.ann <- paste0(hilic.icms.new.ann.B2$HMDB,".",hilic.icms.new.ann.B2$Type)
+
+colnames(hilic.icms.partial.B1.5) <- hilic.icms.df.B1.part.ann
+rownames(hilic.icms.partial.B1.5) <- hilic.icms.df.B1.part.ann
+colnames(hilic.icms.partial.B2.5) <- hilic.icms.df.B2.part.ann
+rownames(hilic.icms.partial.B2.5) <- hilic.icms.df.B2.part.ann
+colnames(hilic.icms.partial.B1.75) <- hilic.icms.df.B1.part.ann
+rownames(hilic.icms.partial.B1.75) <- hilic.icms.df.B1.part.ann
+colnames(hilic.icms.partial.B2.75) <- hilic.icms.df.B2.part.ann
+rownames(hilic.icms.partial.B2.75) <- hilic.icms.df.B2.part.ann
+colnames(hilic.icms.partial.B1.9) <- hilic.icms.df.B1.part.ann
+rownames(hilic.icms.partial.B1.9) <- hilic.icms.df.B1.part.ann
+colnames(hilic.icms.partial.B2.9) <- hilic.icms.df.B2.part.ann
+rownames(hilic.icms.partial.B2.9) <- hilic.icms.df.B2.part.ann
+
+diag(protein.pprotein.partial.B1.1) <- 1
+diag(protein.pprotein.partial.B2.1) <- 1
+diag(protein.pprotein.partial.B1.25) <- 1
+diag(protein.pprotein.partial.B2.25) <- 1
+diag(protein.pprotein.partial.B1.4) <- 1
+diag(protein.pprotein.partial.B2.4) <- 1
+
+colnames(protein.pprotein.partial.B1.1) <- colnames(protein.pprotein.df.B1)
+rownames(protein.pprotein.partial.B1.1) <- colnames(protein.pprotein.df.B1)
+colnames(protein.pprotein.partial.B2.1) <- colnames(protein.pprotein.df.B2)
+rownames(protein.pprotein.partial.B2.1) <- colnames(protein.pprotein.df.B2)
+colnames(protein.pprotein.partial.B1.25) <- colnames(protein.pprotein.df.B1)
+rownames(protein.pprotein.partial.B1.25) <- colnames(protein.pprotein.df.B1)
+colnames(protein.pprotein.partial.B2.25) <- colnames(protein.pprotein.df.B2)
+rownames(protein.pprotein.partial.B2.25) <- colnames(protein.pprotein.df.B2)
+colnames(protein.pprotein.partial.B1.4) <- colnames(protein.pprotein.df.B1)
+rownames(protein.pprotein.partial.B1.4) <- colnames(protein.pprotein.df.B1)
+colnames(protein.pprotein.partial.B2.4) <- colnames(protein.pprotein.df.B2)
+rownames(protein.pprotein.partial.B2.4) <- colnames(protein.pprotein.df.B2)
+
+tmp4<-list(icms.partial.B1.5,icms.partial.B2.5,icms.partial.B1.75,icms.partial.B2.75,icms.partial.B1.9,icms.partial.B2.9,
+           hilic.partial.B1.5,hilic.partial.B2.5,hilic.partial.B1.75,hilic.partial.B2.75,hilic.partial.B1.9,hilic.partial.B2.9,
+           protein.partial.B1.1,protein.partial.B2.1,protein.partial.B1.25,protein.partial.B2.25,protein.partial.B1.4,protein.partial.B2.4,
+           pprotein.partial.B1.1,pprotein.partial.B2.1,pprotein.partial.B1.25,
+           pprotein.partial.B2.25,pprotein.partial.B1.4,pprotein.partial.B2.4,
+           hilic.icms.partial.B1.5,hilic.icms.partial.B2.5,hilic.icms.partial.B1.75,
+           hilic.icms.partial.B2.75,hilic.icms.partial.B1.9,hilic.icms.partial.B2.9,
+           protein.pprotein.partial.B1.1,protein.pprotein.partial.B2.1,protein.pprotein.partial.B1.25,
+           protein.pprotein.partial.B2.25,protein.pprotein.partial.B1.4,protein.pprotein.partial.B2.4)
+
+names(tmp4)<-c("ICMS.partial.rho.0.5.B1", "ICMS.partial.rho.0.5.B2", "ICMS.partial.rho.0.75.B1",
+               "ICMS.partial.rho.0.75.B2", "ICMS.partial.rho.0.9.B1", "ICMS.partial.rho.0.9.B2",
+               "HILIC.partial.rho.0.5.B1", "HILIC.partial.rho.0.5.B2", "HILIC.partial.rho.0.75.B1",
+               "HILIC.partial.rho.0.75.B2", "HILIC.partial.rho.0.9.B1", "HILIC.partial.rho.0.9.B2",
+               "Protein.partial.rho.0.1.B1", "Protein.partial.rho.0.1.B2", "Protein.partial.rho.0.25.B1",
+               "Protein.partial.rho.0.25.B2", "Protein.partial.rho.0.4.B1", "Protein.partial.rho.0.4.B2",
+               "PProtein.partial.rho.0.1.B1", "PProtein.partial.rho.0.1.B2", "PProtein.partial.rho.0.25.B1",
+               "PProtein.partial.rho.0.25.B2", "PProtein.partial.rho.0.4.B1", "PProtein.partial.rho.0.4.B2",
+               "HILIC.ICMS.partial.rho.0.5.B1", "HILIC.ICMS.partial.rho.0.5.B2", "HILIC.ICMS.partial.rho.0.75.B1",
+               "HILIC.ICMS.partial.rho.0.75.B2", "HILIC.ICMS.partial.rho.0.9.B1", "HILIC.ICMS.partial.rho.0.9.B2",
+               "PPProtein.partial.rho.0.1.B1", "PPProtein.partial.rho.0.1.B2", "PPProtein.partial.rho.0.25.B1",
+               "PPProtein.partial.rho.0.25.B2", "PPProtein.partial.rho.0.4.B1", "PPProtein.partial.rho.0.4.B2"
+               )
+
+
+write.xlsx(tmp4, rowNames=TRUE, "W:/Health Services and Outcomes Research/BEC/Brooke Fridley/consult/Cheng.Nikki/R01 DCIS/results/Chase_Results/Network/DCIS_IDC_Network_Partial_Correlations_CS.xlsx")
+
+```
+

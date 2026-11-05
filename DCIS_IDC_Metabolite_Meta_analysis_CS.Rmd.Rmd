@@ -1,0 +1,432 @@
+---
+title: 'DCIS R01: HILIC & ICMS Data - Meta-Analysis of DCIS vs IDC'
+author: "Brooke L. Fridley, PhD & Chase J. Sakitis, PhD"
+date: "`r Sys.Date()`"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = FALSE, warning=FALSE, message = FALSE)
+
+library(tidyverse)
+library(ggplot2)
+library(DescTools)
+library(ggpubr) 
+library(stats)
+library(GGally)
+library(missForest)
+library(openxlsx)
+library(psych)
+library(ComplexHeatmap)
+library(circlize)
+library(multtest)
+library(readxl)
+library(metafor)
+library(knitr)
+
+```
+
+## Meta-Analysis of Primary Results
+
+In this analysis, I am doing the meta-analysis of the results from the prior experiment ('Batch 1' or 'B1') with the results from the new experiment ('Batch 2' or 'B2').  
+
+Boxplots for each of the studies (HILIC and ICMS, Batch 1 and 2) can be found in the word files 'HILIC_B1_DCIS_IDC_Boxplots_CS.docx', 'HILIC_B2_DCIS_IDC_Boxplots_CS.docx', 'ICMS_B1_DCIS_IDC_Boxplots_CS.docx', and 'ICMS_B2_DCIS_IDC_Boxplots_CS.docx'.  
+
+The purpose of this study is to compare IDC to DCIS for each metabolite that appears in both batches based on HMDB ID matching.  
+
+A summary of the various metabolites can be found in the excel file "DCIS_IDC_Meta_analysis_CS.xlsx". In this Excel file, there are separate tabs for analysis of HILIC Batch 1 and 2 and ICMS Batch 1 and 2. There are also tabs for meta analysis between the 2 batches for both HILIC and ICMS. The DCIS.CCR2high and DCIS.CCR2low groups are combined to a DCIS group, increasing the n from 3 to 6 for the DCIS group.  
+
+For old assay (HILIC), went from 429 metabolites to 371 based on HMDB ID. For new assay (HILIC), went from 475 metabolites to 342 based on HMDB ID. For old assay (ICMS), went from 146 metabolites to 144 based on HMDB ID. For new assay (ICMS), there were 126 metabolites based on HMDB ID. The metabolites with the same HMDB ID have similar, but not always exactly the same, metabolite names.  
+
+146 metabolites were in both the old and new assays for HILIC and were able to have combined analysis based on HMDB ID (using files from metaboanalyst with HMDB IDs). 109 metabolites were in both the old and new assays for ICMS and were able to have combined analysis based on HMDB ID (using files from metaboanalyst with HMDB IDs).  
+
+```{r readdata1, echo=FALSE}
+
+load(file ="W:/Health Services and Outcomes Research/BEC/Brooke Fridley/consult/Cheng.Nikki/R01 DCIS/data/processed_data/HILIC_processed_data.Rdata")
+HILICdata.B1 <- HILICdata
+load(file ="W:/Health Services and Outcomes Research/BEC/Brooke Fridley/consult/Cheng.Nikki/R01 DCIS/data/processed_data/HILIC_processed_new_data.Rdata")
+HILICdata.B2 <- HILICdata
+load(file ="W:/Health Services and Outcomes Research/BEC/Brooke Fridley/consult/Cheng.Nikki/R01 DCIS/data/processed_data/ICMS_processed_data.Rdata")
+ICMSdata.B1 <- ICMSdata
+load(file ="W:/Health Services and Outcomes Research/BEC/Brooke Fridley/consult/Cheng.Nikki/R01 DCIS/data/processed_data/ICMS_processed_new_data.Rdata")
+ICMSdata.B2 <- ICMSdata
+remove(HILICdata,ICMSdata)
+
+data.trans.hilic.B1<-HILICdata.B1
+data.trans.hilic.B2<-HILICdata.B2
+data.trans.icms.B1<-ICMSdata.B1
+data.trans.icms.B2<-ICMSdata.B2
+
+n.metabolites.hilic.B1<-ncol(data.trans.hilic.B1)-3
+n.metabolites.hilic.B2<-ncol(data.trans.hilic.B2)-2
+n.metabolites.icms.B1<-ncol(data.trans.icms.B1)-2
+n.metabolites.icms.B2<-ncol(data.trans.icms.B2)-2
+
+remove(HILICdata.B1,HILICdata.B2,ICMSdata.B1,ICMSdata.B2)
+
+```
+
+
+
+
+```{r summary1, echo=FALSE}
+
+data.trans.hilic.B1 <- data.trans.hilic.B1 |> filter(Group != "Normal")
+data.trans.hilic.B1$Group <- str_replace(data.trans.hilic.B1$Group,"DCIS.CCR2high","DCIS")
+data.trans.hilic.B1$Group <- str_replace(data.trans.hilic.B1$Group,"DCIS.CCR2low","DCIS")
+data.trans.hilic.B2 <- data.trans.hilic.B2 |> filter(Group != "Normal")
+data.trans.hilic.B2$Group <- str_replace(data.trans.hilic.B2$Group,"DCIS.CCR2high","DCIS")
+data.trans.hilic.B2$Group <- str_replace(data.trans.hilic.B2$Group,"DCIS.CCR2low","DCIS")
+
+data.trans.icms.B1 <- data.trans.icms.B1 |> filter(Group != "Normal")
+data.trans.icms.B1$Group <- str_replace(data.trans.icms.B1$Group,"DCIS.CCR2high","DCIS")
+data.trans.icms.B1$Group <- str_replace(data.trans.icms.B1$Group,"DCIS.CCR2low","DCIS")
+data.trans.icms.B2 <- data.trans.icms.B2 |> filter(Group != "Normal")
+data.trans.icms.B2$Group <- str_replace(data.trans.icms.B2$Group,"DCIS.CCR2high","DCIS")
+data.trans.icms.B2$Group <- str_replace(data.trans.icms.B2$Group,"DCIS.CCR2low","DCIS")
+
+
+tmp.hilic.B1<-describeBy(data.trans.hilic.B1[,2:(n.metabolites.hilic.B1+1)], group=data.trans.hilic.B1$Group)
+tmp.hilic.B2<-describeBy(data.trans.hilic.B2[,2:(n.metabolites.hilic.B2+1)], group=data.trans.hilic.B2$Group)
+tmp.icms.B1<-describeBy(data.trans.icms.B1[,2:(n.metabolites.icms.B1+1)], group=data.trans.icms.B1$Group)
+tmp.icms.B2<-describeBy(data.trans.icms.B2[,2:(n.metabolites.icms.B2+1)], group=data.trans.icms.B2$Group)
+
+
+tmp1.hilic.B1 <- data.frame(Metabolite=rownames(tmp.hilic.B1[[1]]),
+                         DCIS.n=tmp.hilic.B1[[1]]$n,DCIS.mean=tmp.hilic.B1[[1]]$mean,DCIS.sd=tmp.hilic.B1[[1]]$sd,
+                         IDC.n=tmp.hilic.B1[[2]]$n,IDC.mean=tmp.hilic.B1[[2]]$mean,IDC.sd=tmp.hilic.B1[[2]]$sd)
+tmp1.hilic.B2 <- data.frame(Metabolite=rownames(tmp.hilic.B2[[1]]),
+                         DCIS.n=tmp.hilic.B2[[1]]$n,DCIS.mean=tmp.hilic.B2[[1]]$mean,DCIS.sd=tmp.hilic.B2[[1]]$sd,
+                         IDC.n=tmp.hilic.B2[[2]]$n,IDC.mean=tmp.hilic.B2[[2]]$mean,IDC.sd=tmp.hilic.B2[[2]]$sd)
+tmp1.icms.B1 <- data.frame(Metabolite=rownames(tmp.icms.B1[[1]]),
+                         DCIS.n=tmp.icms.B1[[1]]$n,DCIS.mean=tmp.icms.B1[[1]]$mean,DCIS.sd=tmp.icms.B1[[1]]$sd,
+                         IDC.n=tmp.icms.B1[[2]]$n,IDC.mean=tmp.icms.B1[[2]]$mean,IDC.sd=tmp.icms.B1[[2]]$sd)
+tmp1.icms.B2 <- data.frame(Metabolite=rownames(tmp.icms.B2[[1]]),
+                         DCIS.n=tmp.icms.B2[[1]]$n,DCIS.mean=tmp.icms.B2[[1]]$mean,DCIS.sd=tmp.icms.B2[[1]]$sd,
+                         IDC.n=tmp.icms.B2[[2]]$n,IDC.mean=tmp.icms.B2[[2]]$mean,IDC.sd=tmp.icms.B2[[2]]$sd)
+
+
+hilic.LM.results.B1<-matrix(NA,nrow=n.metabolites.hilic.B1, ncol=4)
+dimnames(hilic.LM.results.B1)[[2]]<-c("Metabolite", "Beta", "SE_Beta","T.Test.P.Value")
+hilic.LM.results.B2<-matrix(NA,nrow=n.metabolites.hilic.B2, ncol=4)
+dimnames(hilic.LM.results.B2)[[2]]<-c("Metabolite", "Beta", "SE_Beta","T.Test.P.Value")
+icms.LM.results.B1<-matrix(NA,nrow=n.metabolites.icms.B1, ncol=4)
+dimnames(icms.LM.results.B1)[[2]]<-c("Metabolite", "Beta", "SE_Beta","T.Test.P.Value")
+icms.LM.results.B2<-matrix(NA,nrow=n.metabolites.icms.B2, ncol=4)
+dimnames(icms.LM.results.B2)[[2]]<-c("Metabolite", "Beta", "SE_Beta","T.Test.P.Value")
+
+
+for(i in 1:n.metabolites.hilic.B1){
+  fit1.hilic.B1<-lm(data.trans.hilic.B1[,i+1]~as.factor(data.trans.hilic.B1$Group))
+  fit2.hilic.B1<-summary(fit1.hilic.B1)
+  
+  hilic.LM.results.B1[i,1]<-dimnames(data.trans.hilic.B1)[[2]][i+1]
+  hilic.LM.results.B1[i,2]<-coef(fit1.hilic.B1)[2]
+  hilic.LM.results.B1[i,3]<-fit2.hilic.B1$coefficients[,"Std. Error"][2]
+  hilic.LM.results.B1[i,4]<-round(fit2.hilic.B1$coefficients[2,'Pr(>|t|)'], 4)
+}
+
+for(i in 1:n.metabolites.hilic.B2){
+  fit1.hilic.B2<-lm(data.trans.hilic.B2[,i+1]~as.factor(data.trans.hilic.B2$Group))
+  fit2.hilic.B2<-summary(fit1.hilic.B2)
+  
+  hilic.LM.results.B2[i,1]<-dimnames(data.trans.hilic.B2)[[2]][i+1]
+  hilic.LM.results.B2[i,2]<-coef(fit1.hilic.B2)[2]
+  hilic.LM.results.B2[i,3]<-fit2.hilic.B2$coefficients[,"Std. Error"][2]
+  hilic.LM.results.B2[i,4]<-round(fit2.hilic.B2$coefficients[2,'Pr(>|t|)'], 4)
+}
+
+for(i in 1:n.metabolites.icms.B1){
+  fit1.icms.B1<-lm(data.trans.icms.B1[,i+1]~as.factor(data.trans.icms.B1$Group))
+  fit2.icms.B1<-summary(fit1.icms.B1)
+  
+  icms.LM.results.B1[i,1]<-dimnames(data.trans.icms.B1)[[2]][i+1]
+  icms.LM.results.B1[i,2]<-coef(fit1.icms.B1)[2]
+  icms.LM.results.B1[i,3]<-fit2.icms.B1$coefficients[,"Std. Error"][2]
+  icms.LM.results.B1[i,4]<-round(fit2.icms.B1$coefficients[2,'Pr(>|t|)'], 4)
+  
+}
+
+for(i in 1:n.metabolites.icms.B2){
+  fit1.icms.B2<-lm(data.trans.icms.B2[,i+1]~as.factor(data.trans.icms.B2$Group))
+  fit2.icms.B2<-summary(fit1.icms.B2)
+  
+  icms.LM.results.B2[i,1]<-dimnames(data.trans.icms.B2)[[2]][i+1]
+  icms.LM.results.B2[i,2]<-coef(fit1.icms.B2)[2]
+  icms.LM.results.B2[i,3]<-fit2.icms.B2$coefficients[,"Std. Error"][2]
+  icms.LM.results.B2[i,4]<-round(fit2.icms.B2$coefficients[2,'Pr(>|t|)'], 4)
+}
+
+
+hilic.LM.results.B1 <- as.data.frame(hilic.LM.results.B1)
+hilic.LM.results.B2 <- as.data.frame(hilic.LM.results.B2)
+icms.LM.results.B1 <- as.data.frame(icms.LM.results.B1)
+icms.LM.results.B2 <- as.data.frame(icms.LM.results.B2)
+
+conv_cols_B1 <- c("Beta", "SE_Beta","T.Test.P.Value")
+
+hilic.LM.results.B1[conv_cols_B1] <- lapply(hilic.LM.results.B1[conv_cols_B1], as.numeric)
+hilic.LM.results.B2[conv_cols_B1] <- lapply(hilic.LM.results.B2[conv_cols_B1], as.numeric)
+icms.LM.results.B1[conv_cols_B1] <- lapply(icms.LM.results.B1[conv_cols_B1], as.numeric)
+icms.LM.results.B2[conv_cols_B1] <- lapply(icms.LM.results.B2[conv_cols_B1], as.numeric)
+
+
+
+hilic.results.B1 <- inner_join(hilic.LM.results.B1,tmp1.hilic.B1,by="Metabolite")
+hilic.results.B2 <- inner_join(hilic.LM.results.B2,tmp1.hilic.B2,by="Metabolite")
+icms.results.B1 <- inner_join(icms.LM.results.B1,tmp1.icms.B1,by="Metabolite")
+icms.results.B2 <- inner_join(icms.LM.results.B2,tmp1.icms.B2,by="Metabolite")
+
+
+remove(tmp.hilic.B1,tmp1.hilic.B1,fit1.hilic.B1,fit2.hilic.B1,
+       tmp.hilic.B2,tmp1.hilic.B2,fit1.hilic.B2,fit2.hilic.B2,
+       tmp.icms.B1,tmp1.icms.B1,fit1.icms.B1,fit2.icms.B1,
+       tmp.icms.B2,tmp1.icms.B2,fit1.icms.B2,fit2.icms.B2,
+       conv_cols_B1,i)
+
+```
+
+
+
+```{r readdata2, echo=FALSE}
+
+## This is the analysis based on beta coefficients and standard errors
+
+## names for old and new HILIC data from metaboanalyst provided by Nikki
+
+hilic.names.nikki.B1<-read_excel("W:/Health Services and Outcomes Research/BEC/Brooke Fridley/consult/Cheng.Nikki/R01 DCIS/data/metabolomics/new_samples/old_HILIC_data_names_metaboanalyst.xlsx")
+hilic.names.nikki.B2<-read_excel("W:/Health Services and Outcomes Research/BEC/Brooke Fridley/consult/Cheng.Nikki/R01 DCIS/data/metabolomics/new_samples/new_HILIC_data_names_metaboanalyst.xlsx")
+icms.names.nikki.B1<-read_excel("W:/Health Services and Outcomes Research/BEC/Brooke Fridley/consult/Cheng.Nikki/R01 DCIS/data/metabolomics/new_samples/old_ICMS_data_names_metaboanalyst.xlsx")
+icms.names.nikki.B2<-read_excel("W:/Health Services and Outcomes Research/BEC/Brooke Fridley/consult/Cheng.Nikki/R01 DCIS/data/metabolomics/new_samples/new_ICMS_data_names_metaboanalyst.xlsx")
+
+hilic.results.hmdb.B1 <- inner_join(hilic.names.nikki.B1, hilic.results.B1, by = c("Query" = "Metabolite"))
+hilic.results.hmdb.B2 <- inner_join(hilic.names.nikki.B2, hilic.results.B2, by = c("Query" = "Metabolite"))
+icms.results.hmdb.B1 <- inner_join(icms.names.nikki.B1, icms.results.B1, by = c("Query" = "Metabolite"))
+icms.results.hmdb.B2 <- inner_join(icms.names.nikki.B2, icms.results.B2, by = c("Query" = "Metabolite"))
+
+remove(hilic.names.nikki.B1,hilic.names.nikki.B2,icms.names.nikki.B1,icms.names.nikki.B2,
+       hilic.results.B1,hilic.results.B2,icms.results.B1,icms.results.B2)
+
+
+hilic.results.hmdb.B1 <- hilic.results.hmdb.B1 |> filter(HMDB != "NA" & HMDB != "-")
+hilic.results.hmdb.B1 <- hilic.results.hmdb.B1 |> select(Metabolite=Query,HMDB,DCIS.n,DCIS.mean,DCIS.sd,
+                                         IDC.n,IDC.mean,IDC.sd,Beta,SE_Beta,T.Test.P.Value)
+hilic.results.hmdb.B1 <- hilic.results.hmdb.B1[order(hilic.results.hmdb.B1$HMDB),]
+
+hilic.results.hmdb.B2 <- hilic.results.hmdb.B2 |> filter(HMDB != "NA" & HMDB != "-")
+hilic.results.hmdb.B2 <- hilic.results.hmdb.B2 |> select(Metabolite=Query,HMDB,DCIS.n,DCIS.mean,DCIS.sd,
+                                         IDC.n,IDC.mean,IDC.sd,Beta,SE_Beta,T.Test.P.Value)
+hilic.results.hmdb.B2 <- hilic.results.hmdb.B2[order(hilic.results.hmdb.B2$HMDB),]
+
+icms.results.hmdb.B1 <- icms.results.hmdb.B1 |> filter(HMDB != "NA" & HMDB != "-")
+icms.results.hmdb.B1 <- icms.results.hmdb.B1 |> select(Metabolite=Query,HMDB,DCIS.n,DCIS.mean,DCIS.sd,
+                                         IDC.n,IDC.mean,IDC.sd,Beta,SE_Beta,T.Test.P.Value)
+icms.results.hmdb.B1 <- icms.results.hmdb.B1[order(icms.results.hmdb.B1$HMDB),]
+
+icms.results.hmdb.B2 <- icms.results.hmdb.B2 |> filter(HMDB != "NA" & HMDB != "-")
+icms.results.hmdb.B2 <- icms.results.hmdb.B2 |> select(Metabolite=Query,HMDB,DCIS.n,DCIS.mean,DCIS.sd,
+                                         IDC.n,IDC.mean,IDC.sd,Beta,SE_Beta,T.Test.P.Value)
+icms.results.hmdb.B2 <- icms.results.hmdb.B2[order(icms.results.hmdb.B2$HMDB),]
+
+
+```
+
+
+
+
+```{r meta_beta, echo=FALSE}
+
+fdr_thresh <- 0.01
+
+hilic.results.hmdb.combine.IDC.temp <- inner_join(hilic.results.hmdb.B1,hilic.results.hmdb.B2,by="HMDB")
+hilic.results.hmdb.combine.IDC <- hilic.results.hmdb.combine.IDC.temp |>
+  select(HMDB,Metabolite.B1=Metabolite.x,Metabolite.B2=Metabolite.y,Beta.x,SE_Beta.x,Beta.y,SE_Beta.y)
+n.hdmb.hilic <- dim(hilic.results.hmdb.combine.IDC)[1]
+
+hilic.meta.analysis.list <- list()
+hilic.meta.analysis.results <- matrix(NA,nrow = n.hdmb.hilic,ncol = 8)
+dimnames(hilic.meta.analysis.results)[[2]] <- c("HMDB","Metabolite.B1","Metabolite.B2","Estimate","SE",
+                                                "Lower.CI","Upper.CI","p.value")
+hilic.meta.analysis.results[,1] <- hilic.results.hmdb.combine.IDC$HMDB
+hilic.meta.analysis.results[,2] <- hilic.results.hmdb.combine.IDC$Metabolite.B1
+hilic.meta.analysis.results[,3] <- hilic.results.hmdb.combine.IDC$Metabolite.B2
+for(j in 1:n.hdmb.hilic){
+  y <- c(hilic.results.hmdb.combine.IDC$Beta.x[j],hilic.results.hmdb.combine.IDC$Beta.y[j])
+  se <- c(hilic.results.hmdb.combine.IDC$SE_Beta.x[j],hilic.results.hmdb.combine.IDC$SE_Beta.y[j])
+  meta.res.hilic <- rma(yi = y, sei = se,method = "FE")
+  hilic.meta.analysis.list[[j]] <- meta.res.hilic
+  hilic.meta.analysis.results[j,4] <- meta.res.hilic$beta[1]
+  hilic.meta.analysis.results[j,5] <- meta.res.hilic$se
+  hilic.meta.analysis.results[j,6] <- meta.res.hilic$ci.lb
+  hilic.meta.analysis.results[j,7] <- meta.res.hilic$ci.ub
+  hilic.meta.analysis.results[j,8] <- meta.res.hilic$pval
+}
+hilic.meta.analysis.results <- as.data.frame(hilic.meta.analysis.results)
+
+fit.hilic<-multtest::mt.rawp2adjp(as.numeric(hilic.meta.analysis.results$p.value), proc="BH")
+fdr.hilic<-fit.hilic$adjp[order(fit.hilic$index),]
+hilic.meta.analysis.results$FDR <- fdr.hilic[,2]
+hilic.meta.analysis.results$Sig.FDR.0.01 <- hilic.meta.analysis.results$FDR < fdr_thresh
+
+
+
+icms.results.hmdb.combine.IDC.temp <- inner_join(icms.results.hmdb.B1,icms.results.hmdb.B2,by="HMDB")
+icms.results.hmdb.combine.IDC <- icms.results.hmdb.combine.IDC.temp |>
+  select(HMDB,Metabolite.B1=Metabolite.x,Metabolite.B2=Metabolite.y,Beta.x,SE_Beta.x,Beta.y,SE_Beta.y)
+n.hdmb.icms <- dim(icms.results.hmdb.combine.IDC)[1]
+
+icms.meta.analysis.list <- list()
+icms.meta.analysis.results <- matrix(NA,nrow = n.hdmb.icms,ncol = 8)
+dimnames(icms.meta.analysis.results)[[2]] <- c("HMDB","Metabolite.B1","Metabolite.B2","Estimate","SE",
+                                                "Lower.CI","Upper.CI","p.value")
+icms.meta.analysis.results[,1] <- icms.results.hmdb.combine.IDC$HMDB
+icms.meta.analysis.results[,2] <- icms.results.hmdb.combine.IDC$Metabolite.B1
+icms.meta.analysis.results[,3] <- icms.results.hmdb.combine.IDC$Metabolite.B2
+for(j in 1:n.hdmb.icms){
+  y <- c(icms.results.hmdb.combine.IDC$Beta.x[j],icms.results.hmdb.combine.IDC$Beta.y[j])
+  se <- c(icms.results.hmdb.combine.IDC$SE_Beta.x[j],icms.results.hmdb.combine.IDC$SE_Beta.y[j])
+  meta.res.icms <- rma(yi = y, sei = se,method = "FE")
+  icms.meta.analysis.list[[j]] <- meta.res.icms
+  icms.meta.analysis.results[j,4] <- meta.res.icms$beta[1]
+  icms.meta.analysis.results[j,5] <- meta.res.icms$se
+  icms.meta.analysis.results[j,6] <- meta.res.icms$ci.lb
+  icms.meta.analysis.results[j,7] <- meta.res.icms$ci.ub
+  icms.meta.analysis.results[j,8] <- meta.res.icms$pval
+}
+icms.meta.analysis.results <- as.data.frame(icms.meta.analysis.results)
+
+fit.icms<-multtest::mt.rawp2adjp(as.numeric(icms.meta.analysis.results$p.value), proc="BH")
+fdr.icms<-fit.icms$adjp[order(fit.icms$index),]
+icms.meta.analysis.results$FDR <- fdr.icms[,2]
+icms.meta.analysis.results$Sig.FDR.0.01 <- icms.meta.analysis.results$FDR < fdr_thresh
+
+tmp2<-list(hilic.results.hmdb.B1, hilic.results.hmdb.B2, icms.results.hmdb.B1,
+           icms.results.hmdb.B2, hilic.meta.analysis.results, icms.meta.analysis.results)
+
+names(tmp2)<-c("HILIC.Batch.1", "HILIC.Batch.2", "ICMS.Batch.1", "ICMS.Batch.2", "HILIC.Meta", "ICMS.Meta")
+
+write.xlsx(tmp2, rowNames=FALSE, "W:/Health Services and Outcomes Research/BEC/Brooke Fridley/consult/Cheng.Nikki/R01 DCIS/results/Chase_Results/DCIS_IDC_Meta_analysis_CS.xlsx")
+
+```
+
+
+
+```{r meta_pvalues, echo=FALSE}
+
+hilic.meta.pval.temp1 <- inner_join(hilic.meta.analysis.results,hilic.LM.results.B1,by=c("Metabolite.B1" = "Metabolite"))
+hilic.meta.pval <- inner_join(hilic.meta.pval.temp1,hilic.LM.results.B2,by=c("Metabolite.B2" = "Metabolite"))
+
+icms.meta.pval.temp1 <- inner_join(icms.meta.analysis.results,icms.LM.results.B1,by=c("Metabolite.B1" = "Metabolite"))
+icms.meta.pval <- inner_join(icms.meta.pval.temp1,icms.LM.results.B2,by=c("Metabolite.B2" = "Metabolite"))
+
+
+ggplot(hilic.meta.pval, aes(T.Test.P.Value.x, T.Test.P.Value.y, fill = Sig.FDR.0.01))+
+  geom_point(shape = 21, size = 2)+
+  xlab("T-test p-values Batch 1")+
+  ylab("T-test p-values Batch 2")+
+  scale_fill_manual(values = c("TRUE" = "green", "FALSE" = "black")) +
+  ggtitle("Meta-Analysis of HILIC results", subtitle = "DCIS vs IDC")+
+  geom_vline(xintercept = 0.10 ,col="red")+
+  geom_hline(yintercept= 0.10, col="red")+
+  labs(fill = "FDR < 0.01")
+
+ggplot(icms.meta.pval, aes(T.Test.P.Value.x, T.Test.P.Value.y, fill = Sig.FDR.0.01))+
+  geom_point(shape = 21, size = 2)+
+  xlab("T-test p-values Batch 1")+
+  ylab("T-test p-values Batch 2")+
+  scale_fill_manual(values = c("TRUE" = "green", "FALSE" = "black")) +
+  ggtitle("Meta-Analysis of ICMS results", subtitle = "DCIS vs IDC")+
+  geom_vline(xintercept = 0.10 ,col="red")+
+  geom_hline(yintercept= 0.10, col="red")+
+  labs(fill = "FDR < 0.01")
+
+
+```
+
+
+
+
+## Forest Plots and Boxplots for HILIC: DCIS vs IDC (top metabolites)
+
+27 metabolites from the HILIC meta analysis had FDR values < 0.01 from the fixed effects model. In the Excel file, there is a "True/False" indicator column. 
+
+```{r hilicforestplots, echo=FALSE, fig.width=10}
+
+## Forest Plots and Boxplots
+
+hilic.meta.analysis.results.top <- as.numeric(rownames(hilic.meta.analysis.results[hilic.meta.analysis.results$FDR < fdr_thresh,]))
+n.hilic.top <- length(hilic.meta.analysis.results.top)
+
+for(t in 1:n.hilic.top){
+  forest(hilic.meta.analysis.list[[hilic.meta.analysis.results.top[t]]],
+         slab = c("Batch 1","Batch 2"),
+         header = paste0("HILIC - ",hilic.meta.analysis.results$HMDB[hilic.meta.analysis.results.top[t]],": ",
+                         hilic.meta.analysis.results$Metabolite.B2[hilic.meta.analysis.results.top[t]]),
+         shade = TRUE)
+  metab1 <- hilic.meta.analysis.results[hilic.meta.analysis.results.top[t],]$Metabolite.B1
+  metab2 <- hilic.meta.analysis.results[hilic.meta.analysis.results.top[t],]$Metabolite.B2
+  metab_dat <- c(data.trans.hilic.B1[,metab1],data.trans.hilic.B2[,metab2])
+  metab_group <- c(data.trans.hilic.B1$Group,data.trans.hilic.B2$Group)
+  metab_batch <- rep(c("Batch1","Batch2"),each=dim(data.trans.hilic.B1)[1])
+  df_metab <- data.frame(metab_dat,metab_group,metab_batch)
+  # colnames(df_metab) <- c(metab,"Group")
+  plot1<-ggplot(data=df_metab, aes(x=interaction(metab_group,metab_batch), df_metab[,1], fill = metab_group))+
+        geom_boxplot(outlier.shape=NA)+
+        geom_jitter(color="black")+
+        xlab("Group & Batch")+
+        ylab("Normalized-Standardized Abundance")+
+        scale_fill_discrete(name = "Group") +
+        ggtitle(paste0("HILIC - ",hilic.meta.analysis.results$HMDB[hilic.meta.analysis.results.top[t]],": ",metab2))+
+        theme(axis.text.x = element_text(angle=45, hjust=1, size=10))
+
+  print(plot1)
+}
+
+
+```
+
+
+## Forest Plots and Boxplots for ICMS: DCIS vs IDC (top metabolites)
+
+15 metabolites from the ICMS meta analysis had FDR values < 0.01 from the fixed effects model. In the Excel file, there is a "True/False" indicator column.
+
+```{r icmsforestplots, echo=FALSE, fig.width=10}
+
+icms.meta.analysis.results.top <- as.numeric(rownames(icms.meta.analysis.results[icms.meta.analysis.results$FDR < fdr_thresh,]))
+n.icms.top <- length(icms.meta.analysis.results.top)
+
+for(t in 1:n.icms.top){
+  forest(icms.meta.analysis.list[[icms.meta.analysis.results.top[t]]],
+         slab = c("Batch 1","Batch 2"),
+         header = paste0("ICMS - ",icms.meta.analysis.results$HMDB[icms.meta.analysis.results.top[t]],": ",
+                         icms.meta.analysis.results$Metabolite.B2[icms.meta.analysis.results.top[t]]),
+         shade = TRUE)
+  metab1 <- icms.meta.analysis.results[icms.meta.analysis.results.top[t],]$Metabolite.B1
+  metab2 <- icms.meta.analysis.results[icms.meta.analysis.results.top[t],]$Metabolite.B2
+  metab_dat <- c(data.trans.icms.B1[,metab1],data.trans.icms.B2[,metab2])
+  metab_group <- c(data.trans.icms.B1$Group,data.trans.icms.B2$Group)
+  metab_batch <- rep(c("Batch1","Batch2"),each=dim(data.trans.icms.B1)[1])
+  df_metab <- data.frame(metab_dat,metab_group,metab_batch)
+  # colnames(df_metab) <- c(metab,"Group")
+  plot1<-ggplot(data=df_metab, aes(x=interaction(metab_group,metab_batch), df_metab[,1], fill = metab_group))+
+        geom_boxplot(outlier.shape=NA)+
+        geom_jitter(color="black")+
+        xlab("Group & Batch")+
+        ylab("Normalized-Standardized Abundance")+
+        scale_fill_discrete(name = "Group") +
+        ggtitle(paste0("HILIC - ",icms.meta.analysis.results$HMDB[icms.meta.analysis.results.top[t]],": ",metab2))+
+        theme(axis.text.x = element_text(angle=45, hjust=1, size=10))
+
+  print(plot1)
+}
+
+
+
+```
+
+
+
+
+
+
